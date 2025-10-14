@@ -66,4 +66,10 @@ public class Walk : MonoBehaviour
             animator.SetFloat(MovementDirection, 0f, 0.1f, Time.deltaTime);
         }
     }
+
+    // Add this function anywhere inside your Walk class
+    public Vector2 GetMoveInput()
+    {
+        return moveInput;
+    }
 }
