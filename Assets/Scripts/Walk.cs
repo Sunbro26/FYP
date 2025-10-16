@@ -7,20 +7,24 @@ public class Walk : MonoBehaviour
     public float speed = 5f;
     public float rotationSpeed = 720f;
 
+    // --- NEW: This property lets other scripts lock/unlock movement ---
+    public bool IsMovementLocked { get; set; }
+
     private CharacterController characterController;
     private Animator animator;
     private Vector2 moveInput;
+    private Transform cameraTransform;
 
-    // A unique ID for the "MovementDirection" parameter to improve performance.
     private static readonly int MovementDirection = Animator.StringToHash("MovementDirection");
 
     void Start()
     {
         characterController = GetComponent<CharacterController>();
         animator = GetComponentInChildren<Animator>();
+        cameraTransform = Camera.main.transform;
+        IsMovementLocked = false; // Player can move at the start
     }
 
-    // This method is called by the Player Input component when the "Move" action is triggered.
     public void OnMove(InputAction.CallbackContext context)
     {
         moveInput = context.ReadValue<Vector2>();
@@ -28,46 +32,45 @@ public class Walk : MonoBehaviour
 
     void Update()
     {
-        // We only care about forward/backward input for movement.
-        float verticalInput = moveInput.y;
+        // --- NEW: If movement is locked, do nothing and exit the Update loop early ---
+        if (IsMovementLocked)
+        {
+            // Set animator values to idle when locked to prevent sliding animation
+            animator.SetFloat(MovementDirection, 0f, 0.1f, Time.deltaTime);
+            return;
+        }
 
-        // The move direction is always based on the character's forward vector.
-        Vector3 moveDirection = transform.forward * verticalInput;
+        // --- All of your existing movement code remains below ---
+        Vector3 cameraForward = new Vector3(cameraTransform.forward.x, 0, cameraTransform.forward.z).normalized;
+        Vector3 cameraRight = new Vector3(cameraTransform.right.x, 0, cameraTransform.right.z).normalized;
+        Vector3 moveDirection = (cameraForward * moveInput.y + cameraRight * moveInput.x).normalized;
 
-        // Move the character.
         characterController.Move(moveDirection * speed * Time.deltaTime);
 
-        // Handle rotation using the horizontal input.
-        float horizontalInput = moveInput.x;
-        transform.Rotate(Vector3.up, horizontalInput * rotationSpeed * Time.deltaTime);
-
-        // Update the Animator.
-        UpdateAnimation(verticalInput);
+        if (moveInput != Vector2.zero)
+        {
+            Quaternion targetRotation;
+            if (moveInput.y < -0.1f)
+            {
+                targetRotation = Quaternion.LookRotation(cameraForward);
+            }
+            else
+            {
+                targetRotation = Quaternion.LookRotation(moveDirection);
+            }
+            transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
+        }
+        UpdateAnimation();
     }
 
-    private void UpdateAnimation(float verticalInput)
+    private void UpdateAnimation()
     {
         if (animator == null) return;
-
-        // Determine the direction and set the parameter.
-        if (verticalInput > 0.1f)
-        {
-            // Moving forward
-            animator.SetFloat(MovementDirection, 1f, 0.1f, Time.deltaTime);
-        }
-        else if (verticalInput < -0.1f)
-        {
-            // Moving backward
-            animator.SetFloat(MovementDirection, -1f, 0.1f, Time.deltaTime);
-        }
-        else
-        {
-            // Not moving (Idle)
-            animator.SetFloat(MovementDirection, 0f, 0.1f, Time.deltaTime);
-        }
+        if (moveInput.y < -0.1f) { animator.SetFloat(MovementDirection, -1f, 0.1f, Time.deltaTime); }
+        else if (moveInput.magnitude > 0.1f) { animator.SetFloat(MovementDirection, 1f, 0.1f, Time.deltaTime); }
+        else { animator.SetFloat(MovementDirection, 0f, 0.1f, Time.deltaTime); }
     }
 
-    // Add this function anywhere inside your Walk class
     public Vector2 GetMoveInput()
     {
         return moveInput;

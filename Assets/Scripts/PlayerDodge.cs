@@ -9,16 +9,19 @@ public class PlayerDodge : MonoBehaviour
     public float dodgeDistance = 5f;
     [Tooltip("The duration of the dodge. This should be slightly less than the animation's length.")]
     public float dodgeDuration = 0.6f;
+    [Tooltip("How quickly the character turns to face the dodge direction.")]
+    public float dodgeRotationSpeed = 15f;
 
-    // References to other components on the player
+    // References to other components
     private CharacterController _characterController;
     private Animator _animator;
-    private Walk _walkScript; // Reference to YOUR Walk.cs script
-    private PlayerAttack _attackScript; // We assume you have a PlayerAttack script
+    private Walk _walkScript;
+    private PlayerAttack _attackScript;
+    private Transform _cameraTransform;
 
-    // A flag to prevent starting a new dodge while already dodging
+    // State flag
     private bool _isDodging = false;
-    
+
     // Animator trigger hash
     private static readonly int DodgeTrigger = Animator.StringToHash("Dodge");
 
@@ -28,14 +31,18 @@ public class PlayerDodge : MonoBehaviour
         _animator = GetComponentInChildren<Animator>();
         _walkScript = GetComponent<Walk>();
         _attackScript = GetComponent<PlayerAttack>();
+        _cameraTransform = Camera.main.transform;
     }
 
-    // This method is called by the Player Input component
     public void OnDodge(InputAction.CallbackContext context)
     {
-        // We can only dodge if the button is pressed AND we are not already dodging or attacking.
         if (context.started && !_isDodging && (_attackScript == null || !_attackScript.IsAttacking()))
         {
+            // --- THE FIX (PART 1) ---
+            // Lock movement IMMEDIATELY to prevent the Walk script from causing a slide this frame.
+            if (_walkScript != null) _walkScript.IsMovementLocked = true;
+
+            // Now start the coroutine.
             StartCoroutine(DodgeSequence());
         }
     }
@@ -43,43 +50,55 @@ public class PlayerDodge : MonoBehaviour
     private IEnumerator DodgeSequence()
     {
         _isDodging = true;
+
+        // --- THE FIX (PART 2) ---
+        // The movement lock is now handled in OnDodge(), so we can remove this line.
+        // if (_walkScript != null) _walkScript.IsMovementLocked = true; 
         
-        // Disable player control scripts
-        if (_walkScript != null) _walkScript.enabled = false;
+        // We still disable attacking to prevent a dodge-attack combo.
         if (_attackScript != null) _attackScript.enabled = false;
 
-        // Trigger the animation in the Animator
         _animator.SetTrigger(DodgeTrigger);
 
-        // --- Calculate Dodge Direction based on player input ---
-        Vector2 moveInput = _walkScript.GetMoveInput(); // We will add this helper function to Walk.cs
+        // --- All the dodge direction and movement logic remains the same ---
+        Vector2 moveInput = _walkScript.GetMoveInput();
         Vector3 dodgeDirection;
+        Vector3 cameraForward = new Vector3(_cameraTransform.forward.x, 0, _cameraTransform.forward.z).normalized;
+        Vector3 cameraRight = new Vector3(_cameraTransform.right.x, 0, _cameraTransform.right.z).normalized;
 
-        // If the player is holding a movement key, dodge in that direction
         if (moveInput.magnitude > 0.1f)
         {
-            // We use the player's local forward and right vectors to get the correct direction
-            dodgeDirection = (transform.forward * moveInput.y + transform.right * moveInput.x).normalized;
+            dodgeDirection = (cameraForward * moveInput.y + cameraRight * moveInput.x).normalized;
         }
-        else // If the player is standing still, dodge backward
+        else
         {
-            dodgeDirection = -transform.forward;
+            dodgeDirection = cameraForward;
         }
 
-        // --- Perform the actual dodge movement ---
+        Quaternion targetRotation = Quaternion.LookRotation(dodgeDirection);
+
         float timer = 0f;
         while (timer < dodgeDuration)
         {
             float speed = dodgeDistance / dodgeDuration;
             _characterController.Move(dodgeDirection * speed * Time.deltaTime);
+            transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, dodgeRotationSpeed * Time.deltaTime);
             timer += Time.deltaTime;
-            yield return null; // Wait for the next frame before continuing the loop
+            yield return null;
         }
+        
+        transform.rotation = targetRotation;
 
-        // Re-enable player control scripts
-        if (_walkScript != null) _walkScript.enabled = true;
+        // Unlock movement and re-enable attacking at the end.
+        if (_walkScript != null) _walkScript.IsMovementLocked = false;
         if (_attackScript != null) _attackScript.enabled = true;
 
         _isDodging = false;
+    }
+
+    // Public method for other scripts to check the dodge state
+    public bool IsDodging()
+    {
+        return _isDodging;
     }
 }
