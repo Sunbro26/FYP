@@ -26,3 +26,6 @@
 # Builds
 *.apk
 *.aab
+
+# venv
+python-envs/*
