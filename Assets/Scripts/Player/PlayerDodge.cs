@@ -1,9 +1,11 @@
 using System.Collections;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using System;
 
 public class PlayerDodge : MonoBehaviour
 {
+    public static event Action OnPlayerDodge;
     [Header("Dodge Settings")]
     [Tooltip("How far the character will dodge.")]
     public float dodgeDistance = 5f;
@@ -60,6 +62,7 @@ public class PlayerDodge : MonoBehaviour
 
         _animator.SetTrigger(DodgeTrigger);
 
+        OnPlayerDodge?.Invoke(); 
         // --- All the dodge direction and movement logic remains the same ---
         Vector2 moveInput = _walkScript.GetMoveInput();
         Vector3 dodgeDirection;

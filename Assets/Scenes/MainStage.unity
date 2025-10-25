@@ -1614,6 +1614,22 @@ MonoBehaviour:
   dodgeDistance: 3.5
   dodgeDuration: 1
   dodgeRotationSpeed: 15
+--- !u!114 &312797420
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 312797408}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 855dc11dfae394d4c81120792fa6c0e1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Telemetry
+  apmEventNames:
+  - PlayerAttack
+  - PlayerDodge
+  logInterval: 10
 --- !u!1001 &321107628
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -1697,6 +1713,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 596771400668729102, guid: 5891485f1f429a14e87a01628842307d, type: 3}
       insertIndex: -1
       addedObject: {fileID: 312797418}
+    - targetCorrespondingSourceObject: {fileID: 596771400668729102, guid: 5891485f1f429a14e87a01628842307d, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 312797420}
   m_SourcePrefab: {fileID: 100100000, guid: 5891485f1f429a14e87a01628842307d, type: 3}
 --- !u!1 &330585543
 GameObject:
