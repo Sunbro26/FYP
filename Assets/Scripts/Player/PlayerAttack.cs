@@ -1,11 +1,10 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 using System.Collections;
-using System; // Required for Action
+using System; 
 
 public class PlayerAttack : MonoBehaviour
 {
-    // --- NEW: Event Declaration ---
     public static event Action OnPlayerAttack; 
 
     [Header("Attack Settings")]
