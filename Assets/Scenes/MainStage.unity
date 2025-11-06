@@ -1830,8 +1830,17 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: cfd505fb165dceb4d8b304236db048db, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::LockOn
-  vcamLock: {fileID: 305976061}
   vcamFree: {fileID: 1080951606}
+  vcamLock: {fileID: 305976061}
+  enemyLayers:
+    serializedVersion: 2
+    m_Bits: 64
+  maxLockDistance: 25
+  screenRadius: 0.5
+  playerWeight: 0
+  enemyWeight: 0
+  playerRadius: 0
+  enemyRadius: 0
 --- !u!1001 &321107628
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -7566,8 +7575,12 @@ PrefabInstance:
       value: Boss
       objectReference: {fileID: 0}
     - target: {fileID: 8210207690257594047, guid: 4921fcd859a7b0c45848c5f54d6077ad, type: 3}
+      propertyPath: m_Layer
+      value: 6
+      objectReference: {fileID: 0}
+    - target: {fileID: 8210207690257594047, guid: 4921fcd859a7b0c45848c5f54d6077ad, type: 3}
       propertyPath: m_TagString
-      value: Enemy
+      value: Untagged
       objectReference: {fileID: 0}
     - target: {fileID: 8843755518075579397, guid: 4921fcd859a7b0c45848c5f54d6077ad, type: 3}
       propertyPath: m_LocalScale.x
