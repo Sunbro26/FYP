@@ -5,38 +5,74 @@ using Unity.Cinemachine;
 public class LockOn : MonoBehaviour
 {
     [Header("Cinemachine (set in Inspector)")]
-    [SerializeField] private CinemachineCamera vcamFree;   // your free camera (has mouse input)
-    [SerializeField] private CinemachineCamera vcamLock;   // lock camera (no mouse input)
+    [SerializeField] private CinemachineCamera vcamFree;     // your existing free cam (unchanged)
+    [SerializeField] private CinemachineCamera vcamLock;     // lock cam (Aim=Composer, no input component)
+    [SerializeField] private Transform cameraPivot;          // Follow target used by BOTH VCams (e.g., Player/CameraRoot)
 
-    [Header("Lock Targeting")]
+    [Header("Targeting")]
     [SerializeField] private LayerMask enemyLayers;
     [SerializeField] private float maxLockDistance = 25f;
     [SerializeField, Range(0.05f, 0.5f)]
-    private float screenRadius = 0.25f;
+    private float screenRadius = 0.25f;                      // selection circle around screen center
 
-    [Header("Player")]
+    [Header("Framing (TargetGroup weights & radii)")]
+    [SerializeField] private float playerWeight = 1f;
+    [SerializeField] private float enemyWeight  = 1.2f;
+    [SerializeField] private float playerRadius = 0.5f;
+    [SerializeField] private float enemyRadius  = 0.8f;
 
-    private CinemachineTargetGroup targetGroup; // created at runtime
+    [Header("Pivot steering while locked")]
+    [SerializeField] private float pivotYawLerp   = 10f;     // how fast pivot turns to enemy (yaw)
+    [SerializeField] private bool  steerPitch     = true;    // optionally adjust pitch
+    [SerializeField] private float pivotPitchLerp = 6f;      // how fast pitch follows enemy
+    [SerializeField] private float minPitch = -40f, maxPitch = 70f;
+
+    private CinemachineTargetGroup targetGroup;              // created at runtime for LookAt
     private Transform currentEnemy;
 
-    [Header("Lock on Transforms")]
-    [SerializeField] private float playerWeight;
-    [SerializeField] private float enemyWeight;
+    // We track pitch separately so we can steer pitch without touching free-cam behavior.
+    private float cachedPitchDeg;
 
-    [SerializeField] private float playerRadius;
-    [SerializeField] private float enemyRadius;
     void Awake()
     {
-        // Runtime TargetGroup to aim the lock camera at [player + enemy]
+        // Create a TargetGroup for lock aim (player + enemy)
         var go = new GameObject("LockOnTargetGroup");
         targetGroup = go.AddComponent<CinemachineTargetGroup>();
 
-        // IMPORTANT: Your VCams should already have Follow set to the player's camera pivot in the Inspector.
-        // We do NOT change Follow here; we only set LookAt on the lock camera.
+        if (vcamLock == null || vcamFree == null || cameraPivot == null)
+            Debug.LogWarning("LockOn: Assign vcamFree, vcamLock, and cameraPivot in the Inspector.");
+
+        // Ensure the lock VCam follows the same pivot (do NOT change free VCam here)
+        if (vcamLock != null && vcamLock.Follow == null)
+            vcamLock.Follow = cameraPivot;
+
+        // Initialize cached pitch from pivot
+        Vector3 e = cameraPivot != null ? cameraPivot.eulerAngles : Vector3.zero;
+        cachedPitchDeg = NormalizePitch(e.x);
     }
 
+    void Update()
+    {
+        // Only steer when locked; the free camera behavior remains untouched.
+        if (currentEnemy == null || cameraPivot == null) return;
+
+        // --- YAW: turn the pivot so the camera stays behind the player but faces the enemy ---
+        Vector3 playerPos = transform.position; // this script sits on the player
+        Vector3 toEnemy   = currentEnemy.position - playerPos;
+        Vector3 flat      = new Vector3(toEnemy.x, 0f, toEnemy.z);
+
+        if (flat.sqrMagnitude > 0.0001f)
+        {
+            Quaternion desiredYaw = Quaternion.LookRotation(flat.normalized, Vector3.up);
+            cameraPivot.rotation  = Quaternion.Slerp(cameraPivot.rotation, desiredYaw, pivotYawLerp * Time.deltaTime);
+        }
+    }
+
+    // Input System callback (bind your Lock action to call this method)
     public void OnLock(InputAction.CallbackContext ctx)
     {
+        if (!ctx.performed) return;
+
         if (currentEnemy == null)
         {
             var t = AcquireTargetOnScreen();
@@ -53,38 +89,41 @@ public class LockOn : MonoBehaviour
         }
     }
 
-    void LockOnTarget(Transform enemy)
+    private void LockOnTarget(Transform enemy)
     {
         currentEnemy = enemy;
 
-        // Camera position/orbit stays attached to the player (Follow already set on the VCam).
-        // We only change AIM: look at a group containing player + enemy.
-        targetGroup.AddMember(transform, playerWeight, playerRadius);       // weight, radius
-        targetGroup.AddMember(currentEnemy, enemyWeight, enemyRadius); // slight enemy bias
+        // Aim the lock VCam at a group containing [player, enemy]; position/orbit still comes from cameraPivot
 
-        vcamLock.Target.TrackingTarget = targetGroup.transform; // Aim between player & enemy
-        vcamLock.Priority = 20;
-        vcamFree.Priority = 10;
+        targetGroup.AddMember(transform,    playerWeight, playerRadius);
+        targetGroup.AddMember(currentEnemy, enemyWeight,  enemyRadius);
+
+        vcamLock.Target.TrackingTarget = targetGroup.transform;
+        SwapCameraPriorities();
 
         Debug.Log($"🎯 Locked on: {currentEnemy.name}");
     }
 
-    void ClearLock()
+    private void ClearLock()
     {
         currentEnemy = null;
 
         vcamLock.Target.TrackingTarget = null;
-        vcamLock.Priority = 10;
-        vcamFree.Priority = 20;
-
+        SwapCameraPriorities();
 
 
         Debug.Log("🔓 Lock released — free camera active.");
     }
 
-    Transform AcquireTargetOnScreen()
+        void SwapCameraPriorities() 
     {
-        var cam = Camera.main;
+        int temp = vcamFree.Priority;
+        vcamFree.Priority = vcamLock.Priority;
+        vcamLock.Priority = temp; 
+    }
+    private Transform AcquireTargetOnScreen()
+    {
+        Camera cam = Camera.main;
         if (cam == null) return null;
 
         var cols = Physics.OverlapSphere(transform.position, maxLockDistance, enemyLayers);
@@ -93,28 +132,27 @@ public class LockOn : MonoBehaviour
 
         foreach (var col in cols)
         {
-            var root = col.transform.root;
+            Transform root = col.transform.root;
 
             // Must be visible on screen
             Vector3 vp = cam.WorldToViewportPoint(root.position);
-            if (vp.z <= 0f || vp.x < 0f || vp.x > 1f || vp.y < 0f || vp.y > 1f)
-                continue;
+            if (vp.z <= 0f || vp.x < 0f || vp.x > 1f || vp.y < 0f || vp.y > 1f) continue;
 
             // Prefer near screen center
-            Vector2 dc = new(vp.x - 0.5f, vp.y - 0.5f);
+            Vector2 dc = new Vector2(vp.x - 0.5f, vp.y - 0.5f);
             float r = dc.magnitude;
             if (r > screenRadius) continue;
 
-            // Score: center first, then player distance
             float dist = Vector3.Distance(transform.position, root.position);
             float score = r * 100f + dist * 0.2f;
 
-            if (score < bestScore)
-            {
-                bestScore = score;
-                best = root;
-            }
+            if (score < bestScore) { bestScore = score; best = root; }
         }
         return best;
+    }
+
+    private static float NormalizePitch(float xDeg)
+    {
+        return (xDeg > 180f) ? xDeg - 360f : xDeg;
     }
 }
