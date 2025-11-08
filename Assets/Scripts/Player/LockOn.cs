@@ -17,26 +17,13 @@ public class LockOn : MonoBehaviour
     [SerializeField, Range(0.05f, 0.5f)]
     private float screenRadius = 0.25f;                      // selection circle around screen center
 
-    [Header("Framing (TargetGroup weights & radii)")]
-    [SerializeField] private float playerWeight = 1f;
-    [SerializeField] private float enemyWeight  = 1.2f;
-    [SerializeField] private float playerRadius = 0.5f;
-    [SerializeField] private float enemyRadius  = 0.8f;
 
     [Header("Pivot steering while locked")]
     [SerializeField] private float pivotYawLerp   = 10f;     // how fast pivot turns to enemy (yaw)
-    private CinemachineTargetGroup targetGroup;              // created at runtime for LookAt
     private Transform currentEnemy;
-
-    // We track pitch separately so we can steer pitch without touching free-cam behavior.
-    private float cachedPitchDeg;
 
     void Awake()
     {
-        // Create a TargetGroup for lock aim (player + enemy)
-        var go = new GameObject("LockOnTargetGroup");
-        targetGroup = go.AddComponent<CinemachineTargetGroup>();
-
         if (vcamLock == null || vcamFree == null || cameraPivot == null)
             Debug.LogWarning("LockOn: Assign vcamFree, vcamLock, and cameraPivot in the Inspector.");
 
@@ -44,9 +31,6 @@ public class LockOn : MonoBehaviour
         if (vcamLock != null && vcamLock.Follow == null)
             vcamLock.Follow = cameraPivot;
 
-        // Initialize cached pitch from pivot
-        Vector3 e = cameraPivot != null ? cameraPivot.eulerAngles : Vector3.zero;
-        cachedPitchDeg = NormalizePitch(e.x);
     }
 
     void Update()
@@ -63,9 +47,6 @@ public class LockOn : MonoBehaviour
     {
         Quaternion desiredYaw = Quaternion.LookRotation(flat.normalized, Vector3.up);
         cameraPivot.rotation  = Quaternion.Slerp(cameraPivot.rotation, desiredYaw, pivotYawLerp * Time.deltaTime);
-
-        // keep the target group oriented like the player
-        targetGroup.transform.rotation = transform.rotation;
 
         // move the LOCK camera behind the player, opposite to the enemy direction
         Vector3 oppositeDir = -flat.normalized;                     // opposite of enemy direction
@@ -100,12 +81,9 @@ public class LockOn : MonoBehaviour
     private void LockOnTarget(Transform enemy)
     {
         currentEnemy = enemy;
-
-        // Aim the lock VCam at a group containing [player, enemy]; position/orbit still comes from cameraPivot
-        targetGroup.AddMember(transform,    playerWeight, playerRadius);
-        targetGroup.AddMember(currentEnemy, enemyWeight, enemyRadius);
+        
         SwapCameraPriorities();
-        vcamLock.Target.TrackingTarget = targetGroup.transform;
+        vcamLock.Target.TrackingTarget = enemy.transform;
 
         // Blend to lock VCam (free VCam remains otherwise untouched)
 
