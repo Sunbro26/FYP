@@ -1486,7 +1486,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 305976056}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 625c14eee3ad46c99df7c7c891ef668a, type: 3}
   m_Name: 
@@ -1832,15 +1832,18 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::LockOn
   vcamFree: {fileID: 1080951606}
   vcamLock: {fileID: 305976061}
+  cameraPivot: {fileID: 312797410}
+  cameraOffset: {x: -0.8, y: 2, z: 1.5}
   enemyLayers:
     serializedVersion: 2
     m_Bits: 64
   maxLockDistance: 25
   screenRadius: 0.5
-  playerWeight: 0
-  enemyWeight: 0
-  playerRadius: 0
-  enemyRadius: 0
+  playerWeight: 1
+  enemyWeight: 1
+  playerRadius: 0.5
+  enemyRadius: 0.5
+  pivotYawLerp: 10
 --- !u!1001 &321107628
 PrefabInstance:
   m_ObjectHideFlags: 0

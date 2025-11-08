@@ -9,6 +9,8 @@ public class LockOn : MonoBehaviour
     [SerializeField] private CinemachineCamera vcamLock;     // lock cam (Aim=Composer, no input component)
     [SerializeField] private Transform cameraPivot;          // Follow target used by BOTH VCams (e.g., Player/CameraRoot)
 
+    [SerializeField] private Vector3 cameraOffset;           // Camera Offset behind player
+
     [Header("Targeting")]
     [SerializeField] private LayerMask enemyLayers;
     [SerializeField] private float maxLockDistance = 25f;
@@ -23,10 +25,6 @@ public class LockOn : MonoBehaviour
 
     [Header("Pivot steering while locked")]
     [SerializeField] private float pivotYawLerp   = 10f;     // how fast pivot turns to enemy (yaw)
-    [SerializeField] private bool  steerPitch     = true;    // optionally adjust pitch
-    [SerializeField] private float pivotPitchLerp = 6f;      // how fast pitch follows enemy
-    [SerializeField] private float minPitch = -40f, maxPitch = 70f;
-
     private CinemachineTargetGroup targetGroup;              // created at runtime for LookAt
     private Transform currentEnemy;
 
@@ -61,11 +59,21 @@ public class LockOn : MonoBehaviour
         Vector3 toEnemy   = currentEnemy.position - playerPos;
         Vector3 flat      = new Vector3(toEnemy.x, 0f, toEnemy.z);
 
-        if (flat.sqrMagnitude > 0.0001f)
-        {
-            Quaternion desiredYaw = Quaternion.LookRotation(flat.normalized, Vector3.up);
-            cameraPivot.rotation  = Quaternion.Slerp(cameraPivot.rotation, desiredYaw, pivotYawLerp * Time.deltaTime);
-        }
+    if (flat.sqrMagnitude > 0.0001f)
+    {
+        Quaternion desiredYaw = Quaternion.LookRotation(flat.normalized, Vector3.up);
+        cameraPivot.rotation  = Quaternion.Slerp(cameraPivot.rotation, desiredYaw, pivotYawLerp * Time.deltaTime);
+
+        // keep the target group oriented like the player
+        targetGroup.transform.rotation = transform.rotation;
+
+        // move the LOCK camera behind the player, opposite to the enemy direction
+        Vector3 oppositeDir = -flat.normalized;                     // opposite of enemy direction
+            Vector3 offset = cameraOffset;               // your desired offset
+        Vector3 localOffset = Quaternion.LookRotation(oppositeDir) * offset;
+
+        vcamLock.transform.position = playerPos + localOffset;
+    }
     }
 
     // Input System callback (bind your Lock action to call this method)
@@ -94,33 +102,32 @@ public class LockOn : MonoBehaviour
         currentEnemy = enemy;
 
         // Aim the lock VCam at a group containing [player, enemy]; position/orbit still comes from cameraPivot
-
         targetGroup.AddMember(transform,    playerWeight, playerRadius);
-        targetGroup.AddMember(currentEnemy, enemyWeight,  enemyRadius);
-
-        vcamLock.Target.TrackingTarget = targetGroup.transform;
+        targetGroup.AddMember(currentEnemy, enemyWeight, enemyRadius);
         SwapCameraPriorities();
+        vcamLock.Target.TrackingTarget = targetGroup.transform;
+
+        // Blend to lock VCam (free VCam remains otherwise untouched)
 
         Debug.Log($"🎯 Locked on: {currentEnemy.name}");
     }
 
+    void SwapCameraPriorities()
+    {
+        int temp = vcamFree.Priority;
+        vcamFree.Priority = vcamLock.Priority;
+        vcamLock.Priority = temp;
+    }
+    
     private void ClearLock()
     {
         currentEnemy = null;
 
         vcamLock.Target.TrackingTarget = null;
         SwapCameraPriorities();
-
-
         Debug.Log("🔓 Lock released — free camera active.");
     }
 
-        void SwapCameraPriorities() 
-    {
-        int temp = vcamFree.Priority;
-        vcamFree.Priority = vcamLock.Priority;
-        vcamLock.Priority = temp; 
-    }
     private Transform AcquireTargetOnScreen()
     {
         Camera cam = Camera.main;
@@ -143,7 +150,7 @@ public class LockOn : MonoBehaviour
             float r = dc.magnitude;
             if (r > screenRadius) continue;
 
-            float dist = Vector3.Distance(transform.position, root.position);
+            float dist  = Vector3.Distance(transform.position, root.position);
             float score = r * 100f + dist * 0.2f;
 
             if (score < bestScore) { bestScore = score; best = root; }
