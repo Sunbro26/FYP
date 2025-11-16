@@ -12,6 +12,7 @@ public class Walk : MonoBehaviour
 
     private CharacterController characterController;
     private Animator animator;
+    private LockOn lockOn;
     private Vector2 moveInput;
     private Transform cameraTransform;
 
@@ -25,12 +26,12 @@ public class Walk : MonoBehaviour
         animator = GetComponentInChildren<Animator>();
         cameraTransform = Camera.main.transform;
         IsMovementLocked = false; // Player can move at the start
+        lockOn = GetComponent<LockOn>();
     }
 
     public void OnMove(InputAction.CallbackContext context)
     {
         moveInput = context.ReadValue<Vector2>();
-        Debug.Log(moveInput);
     }
 
     void Update()
@@ -47,21 +48,23 @@ public class Walk : MonoBehaviour
         Vector3 cameraForward = new Vector3(cameraTransform.forward.x, 0, cameraTransform.forward.z).normalized;
         Vector3 cameraRight = new Vector3(cameraTransform.right.x, 0, cameraTransform.right.z).normalized;
         Vector3 moveDirection = (cameraForward * moveInput.y + cameraRight * moveInput.x).normalized;
-        
-        characterController.Move(moveDirection * speed * Time.deltaTime);
 
+        characterController.Move(moveDirection * speed * Time.deltaTime);
+        Quaternion targetRotation;
+        if (!lockOn.isLockedOn)
+        {
         if (moveInput != Vector2.zero)
         {
-            Quaternion targetRotation;
             if (moveInput.y < -0.1f)
-            {
                 targetRotation = Quaternion.LookRotation(cameraForward);
-            }
             else
-            {
                 targetRotation = Quaternion.LookRotation(moveDirection);
-            }
             transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
+        }
+        }
+        else
+        {
+            targetRotation = cameraTransform.rotation;
         }
         UpdateAnimation();
     }
