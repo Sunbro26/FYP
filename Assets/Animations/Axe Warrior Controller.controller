@@ -76,13 +76,13 @@ BlendTree:
     m_CycleOffset: 0
     m_DirectBlendParameter: MovementDirection
     m_Mirror: 0
-  m_BlendParameter: MovementX
+  m_BlendParameter: MovementDirection
   m_BlendParameterY: MovementDirection
   m_MinThreshold: -1
   m_MaxThreshold: 1
   m_UseAutomaticThresholds: 0
   m_NormalizedBlendValues: 0
-  m_BlendType: 3
+  m_BlendType: 0
 --- !u!1102 &-5441651691625901036
 AnimatorState:
   serializedVersion: 6
