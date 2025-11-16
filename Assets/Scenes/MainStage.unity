@@ -1839,10 +1839,6 @@ MonoBehaviour:
     m_Bits: 64
   maxLockDistance: 25
   screenRadius: 0.5
-  playerWeight: 1
-  enemyWeight: 1
-  playerRadius: 0.5
-  enemyRadius: 0.5
   pivotYawLerp: 10
 --- !u!1001 &321107628
 PrefabInstance:

@@ -16,6 +16,8 @@ public class Walk : MonoBehaviour
     private Transform cameraTransform;
 
     private static readonly int MovementDirection = Animator.StringToHash("MovementDirection");
+    private static readonly int MovementX = Animator.StringToHash("MovementX");
+
 
     void Start()
     {
@@ -28,6 +30,7 @@ public class Walk : MonoBehaviour
     public void OnMove(InputAction.CallbackContext context)
     {
         moveInput = context.ReadValue<Vector2>();
+        Debug.Log(moveInput);
     }
 
     void Update()
@@ -37,14 +40,14 @@ public class Walk : MonoBehaviour
         {
             // Set animator values to idle when locked to prevent sliding animation
             animator.SetFloat(MovementDirection, 0f, 0.1f, Time.deltaTime);
+            animator.SetFloat(MovementX, moveInput.x, 0.1f, Time.deltaTime); // X axis
             return;
         }
 
-        // --- All of your existing movement code remains below ---
         Vector3 cameraForward = new Vector3(cameraTransform.forward.x, 0, cameraTransform.forward.z).normalized;
         Vector3 cameraRight = new Vector3(cameraTransform.right.x, 0, cameraTransform.right.z).normalized;
         Vector3 moveDirection = (cameraForward * moveInput.y + cameraRight * moveInput.x).normalized;
-
+        
         characterController.Move(moveDirection * speed * Time.deltaTime);
 
         if (moveInput != Vector2.zero)
@@ -63,13 +66,26 @@ public class Walk : MonoBehaviour
         UpdateAnimation();
     }
 
-    private void UpdateAnimation()
-    {
-        if (animator == null) return;
-        if (moveInput.y < -0.1f) { animator.SetFloat(MovementDirection, -1f, 0.1f, Time.deltaTime); }
-        else if (moveInput.magnitude > 0.1f) { animator.SetFloat(MovementDirection, 1f, 0.1f, Time.deltaTime); }
-        else { animator.SetFloat(MovementDirection, 0f, 0.1f, Time.deltaTime); }
-    }
+private void UpdateAnimation()
+{
+    if (animator == null) return;
+
+    // ----- Z (forward/back) -----
+    if (moveInput.y < -0.1f)
+        animator.SetFloat(MovementDirection, -1f, 0.1f, Time.deltaTime);
+    else if (moveInput.y > 0.1f)
+        animator.SetFloat(MovementDirection, 1f, 0.1f, Time.deltaTime);
+    else
+        animator.SetFloat(MovementDirection, 0f, 0.1f, Time.deltaTime);
+
+    if (moveInput.x < -0.1f)
+        animator.SetFloat(MovementX, -1f, 0.1f, Time.deltaTime);
+    else if (moveInput.x > 0.1f)
+        animator.SetFloat(MovementX, 1f, 0.1f, Time.deltaTime);
+    else
+        animator.SetFloat(MovementX, 0f, 0.1f, Time.deltaTime);
+}
+
 
     public Vector2 GetMoveInput()
     {

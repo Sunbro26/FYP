@@ -17,6 +17,7 @@ public class LockOn : MonoBehaviour
     [SerializeField, Range(0.05f, 0.5f)]
     private float screenRadius = 0.25f;                      // selection circle around screen center
 
+    public boolean lockedOn = false;
 
     [Header("Pivot steering while locked")]
     [SerializeField] private float pivotYawLerp   = 10f;     // how fast pivot turns to enemy (yaw)
@@ -80,6 +81,7 @@ public class LockOn : MonoBehaviour
 
     private void LockOnTarget(Transform enemy)
     {
+        lockedOn = true;
         currentEnemy = enemy;
         
         SwapCameraPriorities();
@@ -99,6 +101,7 @@ public class LockOn : MonoBehaviour
     
     private void ClearLock()
     {
+        lockedOn = false;
         currentEnemy = null;
 
         vcamLock.Target.TrackingTarget = null;
