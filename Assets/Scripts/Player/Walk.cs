@@ -55,8 +55,8 @@ public class Walk : MonoBehaviour
         {
         if (moveInput != Vector2.zero)
         {
-            if (moveInput.y < -0.1f)
-                targetRotation = Quaternion.LookRotation(cameraForward);
+            if (Mathf.Abs(moveInput.y) < -0.1f)
+                targetRotation = Quaternion.LookRotation(-cameraForward);
             else
                 targetRotation = Quaternion.LookRotation(moveDirection);
             transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
