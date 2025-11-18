@@ -1839,6 +1839,7 @@ MonoBehaviour:
     m_Bits: 64
   maxLockDistance: 25
   screenRadius: 0.5
+  isLockedOn: 0
   pivotYawLerp: 10
 --- !u!1001 &321107628
 PrefabInstance:
@@ -2017,7 +2018,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 330585543}
   serializedVersion: 2
-  m_LocalRotation: {x: -0.038861513, y: -0.000000006685064, z: -2.599881e-10, w: 0.99924463}
+  m_LocalRotation: {x: -0.038861524, y: -0.000000049331323, z: -0.0000000019185395, w: 0.99924463}
   m_LocalPosition: {x: 0.191, y: 1.2028233, z: -3.5498676}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
@@ -5374,6 +5375,7 @@ GameObject:
   - component: {fileID: 1080951604}
   - component: {fileID: 1080951603}
   - component: {fileID: 1080951602}
+  - component: {fileID: 1080951609}
   m_Layer: 0
   m_Name: FreeLook Camera
   m_TagString: Untagged
@@ -5530,7 +5532,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1080951601}
   serializedVersion: 2
-  m_LocalRotation: {x: -0.038861513, y: -0.0000000066850645, z: -2.5998811e-10, w: 0.99924463}
+  m_LocalRotation: {x: -0.03886152, y: -0.000000049331323, z: -0.0000000019185395, w: 0.99924463}
   m_LocalPosition: {x: 0.191, y: 1.2028233, z: -3.5498676}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
@@ -5600,6 +5602,19 @@ MonoBehaviour:
       Wait: 1
       Time: 2
     Restrictions: 0
+--- !u!114 &1080951609
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1080951601}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c0d706d0fff26884ca364e55931c14fd, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ClampCameraY
+  minY: 0.1
 --- !u!1001 &1082648375
 PrefabInstance:
   m_ObjectHideFlags: 0
