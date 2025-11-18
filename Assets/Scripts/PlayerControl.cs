@@ -24,24 +24,32 @@ public class PlayerControl : MonoBehaviour
     {
         if (other.gameObject.CompareTag("sword"))
         {
-            // --- 1. CHECK FOR I-FRAMES ---
-            // Get the dodge script reference
+            // 1. Check for I-Frames (Dodge) - (Keep your existing logic here)
             PlayerDodge dodgeScript = GetComponent<PlayerDodge>();
+            if (dodgeScript != null && dodgeScript.IsInvincible) return;
+
+            // --- 2. NEW BLOCK CHECK ---
+            PlayerBlock blockScript = GetComponent<PlayerBlock>();
             
-            // If the script exists AND IsInvincible is true, ignore the hit completely.
-            if (dodgeScript != null && dodgeScript.IsInvincible)
+            // If the block script exists AND we are holding the block button
+            if (blockScript != null && blockScript.IsBlocking)
             {
-                Debug.Log("Dodged damage thanks to I-Frames!");
-                return; // Exit the function immediately
+                Debug.Log("Blocked Damage!");
+                
+                // Disable the enemy's sword so it doesn't hit us the moment we let go of block
+                SkeletonAI enemyScript = other.GetComponentInParent<SkeletonAI>();
+                if (enemyScript != null) enemyScript.canDealDamage = false;
+
+                return; // STOP HERE. Do not subtract health.
             }
-            // -----------------------------
+            // ---------------------------
 
-            SkeletonAI enemyScript = other.GetComponentInParent<SkeletonAI>();
-
-            if (enemyScript != null && enemyScript.canDealDamage == true)
+            // 3. Normal Hit Logic
+            SkeletonAI skeleton = other.GetComponentInParent<SkeletonAI>();
+            if (skeleton != null && skeleton.canDealDamage == true)
             {
                 health = health - 10;
-                enemyScript.canDealDamage = false;
+                skeleton.canDealDamage = false;
             }
         }
     }
