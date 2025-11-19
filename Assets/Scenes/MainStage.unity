@@ -1990,6 +1990,9 @@ MonoBehaviour:
   healthText: {fileID: 513197652}
   health: 100
   maxHealth: 100
+  blockAngle: 60
+  blockSparksPrefab: {fileID: 5586424412945062105, guid: 4bf7e21e07939da47a0c878833139670, type: 3}
+  blockEffectSpawnPoint: {fileID: 816128480}
 --- !u!114 &312797426
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2072,6 +2075,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 217290718317155764, guid: 5891485f1f429a14e87a01628842307d, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1566111071}
+    - targetCorrespondingSourceObject: {fileID: 217290718317155764, guid: 5891485f1f429a14e87a01628842307d, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 816128480}
     m_AddedComponents:
     - targetCorrespondingSourceObject: {fileID: 596771400668729102, guid: 5891485f1f429a14e87a01628842307d, type: 3}
       insertIndex: -1
@@ -4563,6 +4569,37 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 5534383620200805132, guid: ef8374d642969b14baa54045236c5fb0, type: 3}
   m_PrefabInstance: {fileID: 785607267}
   m_PrefabAsset: {fileID: 0}
+--- !u!1 &816128479
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 816128480}
+  m_Layer: 0
+  m_Name: BlockPoint
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &816128480
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 816128479}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -0, y: 1.5, z: 0.35}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 312797410}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!4 &817687399 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 8010573887829100836, guid: b8c30615a0b60cf4eb31e43d75e27c7a, type: 3}

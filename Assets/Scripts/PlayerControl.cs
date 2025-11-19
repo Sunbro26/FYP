@@ -4,13 +4,22 @@ using UnityEngine.UI;
 
 public class PlayerControl : MonoBehaviour
 {
+    [Header("UI")]
     public Slider healthbar;
     public TMP_Text healthText;
+
+    [Header("Stats")]
     public int health = 100;
     public int maxHealth = 0;
 
-    // New Setting: The total width of the block angle (in degrees)
-    public float blockAngle = 60f; 
+    [Header("Block Settings")]
+    public float blockAngle = 60f;
+    
+    [Tooltip("The particle effect prefab to spawn on a successful block.")]
+    public GameObject blockSparksPrefab;
+    
+    [Tooltip("The transform where the sparks will appear (e.g., an empty object on the shield).")]
+    public Transform blockEffectSpawnPoint;
 
     void Start()
     {
@@ -41,35 +50,38 @@ public class PlayerControl : MonoBehaviour
 
             if (blockScript != null && blockScript.IsBlocking)
             {
-                // Get direction from Player to Enemy
                 Vector3 directionToEnemy = (enemyScript.transform.position - transform.position).normalized;
-                
-                // Calculate the angle between Player's Forward and the Enemy Direction
                 float angle = Vector3.Angle(transform.forward, directionToEnemy);
 
-                // We divide the total angle by 2. 
-                // Example: For a 60-degree cone, we check if the enemy is within 30 degrees left or right.
                 if (angle <= blockAngle / 2)
                 {
                     isBlockingSuccessfully = true;
-                }
-                else
-                {
-                    Debug.Log("Block failed! Attack came from angle: " + angle);
                 }
             }
 
             // 4. Outcome Logic
             if (isBlockingSuccessfully)
             {
-                Debug.Log("Blocked Directional Attack!");
-                // Disable damage for this swing so it doesn't hit us immediately after
+                // --- SPAWN PARTICLES ---
+                if (blockSparksPrefab != null && blockEffectSpawnPoint != null)
+                {
+                    // Instantiate the sparks at the spawn point.
+                    // We rotate them to face the enemy so the sparks fly towards the impact.
+                    Vector3 directionToEnemy = (enemyScript.transform.position - transform.position).normalized;
+                    Quaternion sparkRotation = Quaternion.LookRotation(directionToEnemy);
+                    
+                    GameObject sparks = Instantiate(blockSparksPrefab, blockEffectSpawnPoint.position, sparkRotation);
+                    
+                    // Destroy the sparks after 1 second to keep the game clean
+                    Destroy(sparks, 1.0f);
+                }
+                // -----------------------
+
                 enemyScript.canDealDamage = false; 
-                return; // STOP HERE. Take no damage.
+                return; 
             }
             else
             {
-                // Take Damage (Either wasn't blocking, or blocked in the wrong direction)
                 health = health - 10;
                 enemyScript.canDealDamage = false;
             }
