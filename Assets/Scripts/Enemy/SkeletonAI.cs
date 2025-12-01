@@ -12,7 +12,7 @@ public class SkeletonAI : MonoBehaviour
     public float attackCooldown = 3f;
     [Tooltip("How long the attack animation lasts. Movement is locked during this time.")]
     public float attackAnimationDuration = 1.2f;
-
+    [SerializeField] private GameObject sword;
     // Private references
     private NavMeshAgent _navAgent;
     private Animator _animator;
@@ -103,7 +103,7 @@ public class SkeletonAI : MonoBehaviour
 
         // Trigger the attack animation
         _animator.SetTrigger(AttackTrigger);
-        
+        sword.GetComponent<BoxCollider>().enabled = true;
         // Wait for the duration of the animation
         yield return new WaitForSeconds(attackAnimationDuration);
 
@@ -114,6 +114,7 @@ public class SkeletonAI : MonoBehaviour
         }
 
         _isAttacking = false;
+        sword.GetComponent<BoxCollider>().enabled = false;
     }
     
     void FaceTarget()
