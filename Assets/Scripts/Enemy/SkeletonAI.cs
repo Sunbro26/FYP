@@ -1,126 +1,220 @@
 using System.Collections;
 using UnityEngine;
-using UnityEngine.AI; // Important: We need this for the NavMeshAgent
+using UnityEngine.AI;
 
 [RequireComponent(typeof(NavMeshAgent), typeof(Animator))]
-public class SkeletonAI : MonoBehaviour
+public class SkeletonAI_MultiGAIL : MonoBehaviour
 {
-    [Header("AI Settings")]
-    [Tooltip("The range at which the skeleton will start its attack.")]
-    public float attackRange = 2f;
-    [Tooltip("How often the skeleton can perform an attack (in seconds).")]
-    public float attackCooldown = 3f;
-    [Tooltip("How long the attack animation lasts. Movement is locked during this time.")]
-    public float attackAnimationDuration = 1.2f;
-    [SerializeField] private GameObject sword;
-    // Private references
-    private NavMeshAgent _navAgent;
+    // --- Definitions ---
+    public enum AIState
+    {
+        Idle,           // Waiting/Ambush
+        Chasing,        // Closing distance directly
+        Circling,       // Combat stance, strafing
+        Retreating,     // Short-term backing off (creating space)
+        Regrouping,     // Long-term running away (fear/low health)
+        Attacking       // Locked in animation
+    }
+
+    // --- Persona Settings (Crucial for MultiGAIL Data Generation) ---
+    [System.Serializable]
+    public class AIPersona
+    {
+        [Range(0, 1)] public float aggression = 0.5f; // Chance to attack vs circle
+        [Range(0, 1)] public float caution = 0.5f;    // Chance to retreat after attacking
+        [Range(0, 1)] public float fear = 0.2f;       // Chance to regroup at low health
+        public float preferredCombatRange = 3.0f;
+    }
+
+    [Header("Configuration")]
+    public AIPersona currentPersona;
+    public float sensorRadius = 15f;
+    
+    [Header("Movement Stats")]
+    public float circleSpeed = 2.5f;
+    public float retreatDistance = 5.0f;
+
+    // --- State Variables ---
+    private AIState _currentState;
+    private NavMeshAgent _agent;
     private Animator _animator;
-    private Transform _playerTarget;
+    private Transform _target;
+    private float _stateTimer; // How long we've been in the current state
+    private bool _isActionLocked = false;
 
-    // State variables
-    private float _timeSinceLastAttack = 0f;
-    private bool _isAttacking = false;
-
-    // Animator parameter hashes for performance
-    private static readonly int AttackTrigger = Animator.StringToHash("Attack");
-    private static readonly int MovementDirection = Animator.StringToHash("MovementDirection");
+    // --- Hashes ---
+    private static readonly int MoveX = Animator.StringToHash("MoveX");
+    private static readonly int MoveZ = Animator.StringToHash("MoveZ");
+    private static readonly int AttackIndex = Animator.StringToHash("AttackIndex");
+    private static readonly int TriggerAttack = Animator.StringToHash("TriggerAttack");
 
     void Start()
     {
-        // Get the components attached to this GameObject
-        _navAgent = GetComponent<NavMeshAgent>();
+        _agent = GetComponent<NavMeshAgent>();
         _animator = GetComponent<Animator>();
-
-        // Automatically find the player by their tag
-        _playerTarget = GameObject.FindGameObjectWithTag("Player").transform;
-
-        // Allow the skeleton to attack as soon as the game starts if the player is in range
-        _timeSinceLastAttack = attackCooldown;
+        _target = GameObject.FindGameObjectWithTag("Player").transform;
+        
+        // Start passive
+        SwitchState(AIState.Idle);
     }
 
     void Update()
     {
-        // If we don't have a target, do nothing
-        if (_playerTarget == null) return;
+        if (_isActionLocked) return; // Don't move if mid-attack
 
-        // If we are in the middle of an attack animation, do nothing
-        if (_isAttacking) return;
+        // 1. SENSORY UPDATE (Input for Logic)
+        float distance = Vector3.Distance(transform.position, _target.position);
+        float healthPct = 1.0f; // Replace with actual Health component linkage later
+
+        // 2. LOGIC UPDATE (The "Brain" - To be replaced by ML later)
+        // In ML version, this function would be replaced by RequestDecision()
+        DecideNextState(distance, healthPct);
+
+        // 3. EXECUTION UPDATE (The "Body")
+        ExecuteStateLogic(distance);
         
-        // Always increment the attack timer
-        _timeSinceLastAttack += Time.deltaTime;
+        // 4. ROTATION (Always face target unless fleeing)
+        if (_currentState != AIState.Regrouping) FaceTarget();
+    }
 
-        // Calculate the distance to the player
-        float distanceToPlayer = Vector3.Distance(transform.position, _playerTarget.position);
-
-        // --- Decision Making Logic ---
-
-        // Condition to ATTACK
-        if (distanceToPlayer <= attackRange && _timeSinceLastAttack >= attackCooldown)
+    // --- THE BRAIN (Heuristic Logic for Data Generation) ---
+    void DecideNextState(float dist, float health)
+    {
+        // Global Override: Fear/Regroup
+        if (health < 0.3f && Random.value < currentPersona.fear)
         {
-            StartCoroutine(AttackSequence());
+            if (_currentState != AIState.Regrouping) SwitchState(AIState.Regrouping);
+            return;
         }
-        // Condition to CHASE
+
+        switch (_currentState)
+        {
+            case AIState.Idle:
+                if (dist < sensorRadius) SwitchState(AIState.Chasing);
+                break;
+
+            case AIState.Chasing:
+                if (dist <= currentPersona.preferredCombatRange) SwitchState(AIState.Circling);
+                break;
+
+            case AIState.Circling:
+                // Randomly decide to Attack based on Aggression
+                if (_stateTimer > 1.0f && Random.value < (currentPersona.aggression * Time.deltaTime))
+                {
+                    StartCoroutine(PerformAttackLogic());
+                }
+                // Randomly decide to Retreat if too close
+                else if (dist < currentPersona.preferredCombatRange * 0.5f)
+                {
+                    SwitchState(AIState.Retreating);
+                }
+                break;
+
+            case AIState.Retreating:
+                if (dist > currentPersona.preferredCombatRange) SwitchState(AIState.Circling);
+                break;
+        }
+        
+        _stateTimer += Time.deltaTime;
+    }
+
+    // --- THE BODY (Movement Execution) ---
+    void ExecuteStateLogic(float dist)
+    {
+        switch (_currentState)
+        {
+            case AIState.Chasing:
+                _agent.isStopped = false;
+                _agent.SetDestination(_target.position);
+                UpdateAnim(0, 1); // Run Forward
+                break;
+
+            case AIState.Circling:
+                _agent.isStopped = true;
+                // Complex Strafing Logic
+                Vector3 strafeDir = transform.right * Mathf.Sin(Time.time * circleSpeed); // Simple oscillating strafe
+                _agent.Move(strafeDir * Time.deltaTime);
+                UpdateAnim(Mathf.Sin(Time.time), 0); 
+                break;
+
+            case AIState.Retreating:
+                _agent.isStopped = false;
+                // Calculate position away from player
+                Vector3 fleeDir = (transform.position - _target.position).normalized;
+                _agent.SetDestination(transform.position + fleeDir * 2f);
+                UpdateAnim(0, -1); // Walk Backwards
+                break;
+
+            case AIState.Regrouping:
+                _agent.isStopped = false;
+                // Run far away
+                Vector3 runAwayPos = transform.position + (transform.position - _target.position).normalized * 10f;
+                _agent.SetDestination(runAwayPos);
+                UpdateAnim(0, 1); // Run Forward (away)
+                break;
+        }
+    }
+
+    // --- ATTACK SYSTEM (The Complex Patterns) ---
+    IEnumerator PerformAttackLogic()
+    {
+        _isActionLocked = true;
+        _agent.isStopped = true;
+        SwitchState(AIState.Attacking);
+
+        // Select Attack based on Persona & Distance
+        // This is where your list of 16 attacks goes
+        int attackID = ChooseAttackBasedOnContext();
+
+        _animator.SetInteger(AttackIndex, attackID);
+        _animator.SetTrigger(TriggerAttack);
+
+        // Wait for animation to finish (simulated here)
+        float animLength = 1.5f; // Replace with actual clip length query
+        yield return new WaitForSeconds(animLength);
+
+        // Decision after attack: Retreat or stay?
+        if (Random.value < currentPersona.caution)
+        {
+            SwitchState(AIState.Retreating);
+        }
         else
         {
-            // Set the player as the destination for the NavMeshAgent
-            _navAgent.SetDestination(_playerTarget.position);
-            
-            // If the agent is moving (i.e., its path is not complete)
-            if (_navAgent.remainingDistance > _navAgent.stoppingDistance)
-            {
-                // Play the forward walk animation
-                _animator.SetFloat(MovementDirection, 1f, 0.1f, Time.deltaTime);
-                
-                // --- Face the direction of movement (optional but looks better) ---
-                Vector3 direction = _navAgent.velocity.normalized;
-                if (direction != Vector3.zero)
-                {
-                    Quaternion lookRotation = Quaternion.LookRotation(new Vector3(direction.x, 0, direction.z));
-                    transform.rotation = Quaternion.Slerp(transform.rotation, lookRotation, Time.deltaTime * 5f);
-                }
-            }
-            else // If the agent has reached its destination (is close to the player but on cooldown)
-            {
-                // Play the idle animation
-                _animator.SetFloat(MovementDirection, 0f, 0.1f, Time.deltaTime);
-                // Face the player
-                FaceTarget();
-            }
+            SwitchState(AIState.Circling);
         }
+
+        _isActionLocked = false;
     }
 
-    private IEnumerator AttackSequence()
+    int ChooseAttackBasedOnContext()
     {
-        _isAttacking = true;
-        _timeSinceLastAttack = 0f;
-
-        // Stop the agent from moving during the attack
-        _navAgent.isStopped = true;
-
-        // Turn to face the player before attacking
-        FaceTarget();
-
-        // Trigger the attack animation
-        _animator.SetTrigger(AttackTrigger);
-        sword.GetComponent<BoxCollider>().enabled = true;
-        // Wait for the duration of the animation
-        yield return new WaitForSeconds(attackAnimationDuration);
-
-        // Resume movement after the attack is finished
-        if (_navAgent.isOnNavMesh) // Safety check in case the agent was destroyed
-        {
-            _navAgent.isStopped = false;
-        }
-
-        _isAttacking = false;
-        sword.GetComponent<BoxCollider>().enabled = false;
+        float dist = Vector3.Distance(transform.position, _target.position);
+        
+        // Example Logic:
+        // 0: Basic Slash, 1: Dash Attack, 2: Heavy AOE
+        if (dist > 4.0f) return 1; // Dash attack if far
+        if (dist < 1.5f) return 2; // AOE if very close
+        return 0; // Basic slash otherwise
     }
-    
+
+    // --- Helpers ---
+    void SwitchState(AIState newState)
+    {
+        _currentState = newState;
+        _stateTimer = 0;
+    }
+
+    void UpdateAnim(float x, float z)
+    {
+        _animator.SetFloat(MoveX, x, 0.1f, Time.deltaTime);
+        _animator.SetFloat(MoveZ, z, 0.1f, Time.deltaTime);
+    }
+
     void FaceTarget()
     {
-        Vector3 direction = (_playerTarget.position - transform.position).normalized;
-        Quaternion lookRotation = Quaternion.LookRotation(new Vector3(direction.x, 0, direction.z));
-        transform.rotation = Quaternion.Slerp(transform.rotation, lookRotation, Time.deltaTime * 5f);
+        Vector3 dir = (_target.position - transform.position).normalized;
+        dir.y = 0;
+        Quaternion lookRot = Quaternion.LookRotation(dir);
+        transform.rotation = Quaternion.Slerp(transform.rotation, lookRot, Time.deltaTime * 5f);
     }
 }

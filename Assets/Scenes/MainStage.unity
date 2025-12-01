@@ -2339,10 +2339,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 40e4a1875d065994fb2749719e6caf05, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SkeletonAI
-  attackRange: 2
-  attackCooldown: 2
-  attackAnimationDuration: 1.2
-  sword: {fileID: 690856381}
+  currentPersona:
+    aggression: 0.5
+    caution: 0.5
+    fear: 0.2
+    preferredCombatRange: 3
+  sensorRadius: 15
+  circleSpeed: 2.5
+  retreatDistance: 5
 --- !u!136 &385033933
 CapsuleCollider:
   m_ObjectHideFlags: 0
@@ -8351,7 +8355,7 @@ PrefabInstance:
     - target: {fileID: 3196280426804442751, guid: 4921fcd859a7b0c45848c5f54d6077ad, type: 3}
       propertyPath: m_Controller
       value: 
-      objectReference: {fileID: 9100000, guid: 9f6772e47b33e464583d25f37ff04a4c, type: 2}
+      objectReference: {fileID: 9100000, guid: 4361a361d1d128041872ecacb7d377e0, type: 2}
     - target: {fileID: 5035799717877013675, guid: 4921fcd859a7b0c45848c5f54d6077ad, type: 3}
       propertyPath: m_LocalPosition.x
       value: -0.807
