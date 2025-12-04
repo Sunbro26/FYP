@@ -2024,6 +2024,22 @@ MonoBehaviour:
         m_CallState: 2
     m_ActionId: b340a05e-c2bf-4e89-995a-8a78bb592f66
     m_ActionName: 'Player/Block[/Mouse/rightButton]'
+  - m_PersistentCalls:
+      m_Calls:
+      - m_Target: {fileID: 312797429}
+        m_TargetAssemblyTypeName: PlayerParry, Assembly-CSharp
+        m_MethodName: OnParry
+        m_Mode: 0
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
+    m_ActionId: ef5f603d-3944-41d0-830c-37357a89d769
+    m_ActionName: 'Player/Parry[/Keyboard/q]'
   m_NeverAutoSwitchControlSchemes: 0
   m_DefaultControlScheme: 
   m_DefaultActionMap: Player
@@ -2158,6 +2174,22 @@ MonoBehaviour:
   staminaRegenRate: 15
   staminaRegenDelay: 1
   staminaSlider: {fileID: 1404594191}
+--- !u!114 &312797429
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 312797408}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 49563d9673c5d2b4d96ae80a5d47c675, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerParry
+  staminaCost: 25
+  animationDuration: 1.22
+  parryWindowStart: 0.2
+  parryWindowDuration: 0.2
 --- !u!1001 &321107628
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -2262,6 +2294,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 596771400668729102, guid: 5891485f1f429a14e87a01628842307d, type: 3}
       insertIndex: -1
       addedObject: {fileID: 312797428}
+    - targetCorrespondingSourceObject: {fileID: 596771400668729102, guid: 5891485f1f429a14e87a01628842307d, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 312797429}
   m_SourcePrefab: {fileID: 100100000, guid: 5891485f1f429a14e87a01628842307d, type: 3}
 --- !u!1 &330585543
 GameObject:

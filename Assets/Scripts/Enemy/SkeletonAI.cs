@@ -52,6 +52,7 @@ public class SkeletonAI : MonoBehaviour
     private Transform _target;
     private float _stateTimer; 
     private bool _isActionLocked = false;
+    private static readonly int AttackSpeedHash = Animator.StringToHash("AttackSpeed");
     
     // Public flag for the PlayerControl script to check
     public bool canDealDamage = false;
@@ -255,5 +256,47 @@ public class SkeletonAI : MonoBehaviour
             Quaternion lookRot = Quaternion.LookRotation(dir);
             transform.rotation = Quaternion.Slerp(transform.rotation, lookRot, Time.deltaTime * 5f);
         }
+    }
+
+    // --- PARRY LOGIC ---
+    public void GetParried()
+    {
+        // 1. Interrupt logic
+        StopAllCoroutines(); 
+        _isActionLocked = true;
+        _agent.isStopped = true;
+        canDealDamage = false; // Sword is harmless
+
+        // 2. Start the Reverse Routine
+        StartCoroutine(ParryReboundRoutine());
+    }
+
+    private IEnumerator ParryReboundRoutine()
+    {
+        Debug.Log("BOSS PARRIED! REVERSING ANIMATION!");
+
+        // 3. REVERSE THE ANIMATION
+        // We set the parameter to -1 (or -2 for faster rebound).
+        // Because we linked this in the Inspector, only the Attack state plays backwards.
+        _animator.SetFloat(AttackSpeedHash, -1.66f);
+
+        // 4. Wait for the arm to bounce back
+        // Wait roughly 0.3 to 0.5 seconds for the arm to fly back
+        yield return new WaitForSeconds(0.4f);
+
+        // 5. FREEZE (Stun)
+        // Set speed to 0 to hold that pose momentarily
+        _animator.SetFloat(AttackSpeedHash, 0f);
+        
+        // Stun duration (e.g., 1.5 seconds of free hits for the player)
+        yield return new WaitForSeconds(1.0f);
+
+        // 6. RESET
+        // Reset speed to normal so the next attack works correctly
+        _animator.SetFloat(AttackSpeedHash, 1.0f);
+        
+        // Force a state change so we don't try to finish the slashed animation
+        SwitchState(AIState.Retreating);
+        _isActionLocked = false;
     }
 }

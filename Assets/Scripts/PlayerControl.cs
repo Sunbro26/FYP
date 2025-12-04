@@ -28,14 +28,40 @@ public class PlayerControl : MonoBehaviour
     {
         if (other.gameObject.CompareTag("sword"))
         {
-            // 1. Check for I-Frames (Dodge)
-            if (_dodgeScript != null && _dodgeScript.IsInvincible) return;
-
-            // 2. Get Enemy Reference
+            // 1. Get Enemy Reference
             SkeletonAI enemyScript = other.GetComponentInParent<SkeletonAI>();
             if (enemyScript == null || enemyScript.canDealDamage == false) return;
 
-            // --- 3. DIRECTIONAL BLOCK CHECK ---
+            // 2. Check for I-Frames (Dodge)
+            PlayerDodge dodgeScript = GetComponent<PlayerDodge>();
+            if (dodgeScript != null && dodgeScript.IsInvincible) return;
+
+            // --- 3. NEW PARRY CHECK ---
+            PlayerParry parryScript = GetComponent<PlayerParry>();
+            if (parryScript != null && parryScript.IsParryWindowActive)
+            {
+                // Check Direction (Can usually only parry attacks from the front)
+                Vector3 directionToEnemy = (enemyScript.transform.position - transform.position).normalized;
+                float angle = Vector3.Angle(transform.forward, directionToEnemy);
+
+                if (angle <= 60f) // 60 degree cone for parrying
+                {
+                    Debug.Log("SUCCESSFUL PARRY!");
+                    
+                    // Trigger the enemy rebound
+                    enemyScript.GetParried();
+
+                    // Spawn a spark effect (reuse the block sparks)
+                    if (blockSparksPrefab != null)
+                    {
+                        Instantiate(blockSparksPrefab, blockEffectSpawnPoint.position, Quaternion.identity);
+                    }
+                    
+                    return; // Exit completely
+                }
+            }
+
+            // --- 4. DIRECTIONAL BLOCK CHECK ---
             bool isBlockingSuccessfully = false;
 
             if (_blockScript != null && _blockScript.IsBlocking)
@@ -59,7 +85,7 @@ public class PlayerControl : MonoBehaviour
                 }
             }
 
-            // 4. Outcome Logic
+            // 5. Outcome Logic
             if (isBlockingSuccessfully)
             {
                 // Spawn Particles
