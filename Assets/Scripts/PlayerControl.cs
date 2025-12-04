@@ -1,36 +1,27 @@
 using UnityEngine;
-using TMPro;
-using UnityEngine.UI;
 
 public class PlayerControl : MonoBehaviour
 {
-    [Header("UI")]
-    public Slider healthbar;
-    public TMP_Text healthText;
-    
-
-    [Header("Stats")]
-    public int health = 100;
-    public int maxHealth = 0;
-
     [Header("Block Settings")]
     public float blockAngle = 60f;
+    public float staminaCostPerBlock = 10f; // New: Blocking drains stamina
     
     [Tooltip("The particle effect prefab to spawn on a successful block.")]
     public GameObject blockSparksPrefab;
     
-    [Tooltip("The transform where the sparks will appear (e.g., an empty object on the shield).")]
+    [Tooltip("The transform where the sparks will appear.")]
     public Transform blockEffectSpawnPoint;
+
+    // Reference to the new stats script
+    private CharacterStats _stats;
+    private PlayerBlock _blockScript;
+    private PlayerDodge _dodgeScript;
 
     void Start()
     {
-        maxHealth = health;
-    }
-
-    void Update()
-    {
-        healthText.text = health + " / " + maxHealth;
-        healthbar.value = (float)health / (float)maxHealth;
+        _stats = GetComponent<CharacterStats>();
+        _blockScript = GetComponent<PlayerBlock>();
+        _dodgeScript = GetComponent<PlayerDodge>();
     }
 
     private void OnTriggerEnter(Collider other)
@@ -38,52 +29,59 @@ public class PlayerControl : MonoBehaviour
         if (other.gameObject.CompareTag("sword"))
         {
             // 1. Check for I-Frames (Dodge)
-            PlayerDodge dodgeScript = GetComponent<PlayerDodge>();
-            if (dodgeScript != null && dodgeScript.IsInvincible) return;
+            if (_dodgeScript != null && _dodgeScript.IsInvincible) return;
 
             // 2. Get Enemy Reference
             SkeletonAI enemyScript = other.GetComponentInParent<SkeletonAI>();
             if (enemyScript == null || enemyScript.canDealDamage == false) return;
 
             // --- 3. DIRECTIONAL BLOCK CHECK ---
-            PlayerBlock blockScript = GetComponent<PlayerBlock>();
             bool isBlockingSuccessfully = false;
 
-            if (blockScript != null && blockScript.IsBlocking)
+            if (_blockScript != null && _blockScript.IsBlocking)
             {
                 Vector3 directionToEnemy = (enemyScript.transform.position - transform.position).normalized;
                 float angle = Vector3.Angle(transform.forward, directionToEnemy);
 
+                // Check angle AND if we have enough stamina to block
                 if (angle <= blockAngle / 2)
                 {
-                    isBlockingSuccessfully = true;
+                    // Try to consume stamina for the block
+                    if (_stats.UseStamina(staminaCostPerBlock))
+                    {
+                        isBlockingSuccessfully = true;
+                    }
+                    else
+                    {
+                        Debug.Log("Not enough stamina to block!");
+                        // Guard break logic could go here
+                    }
                 }
             }
 
             // 4. Outcome Logic
             if (isBlockingSuccessfully)
             {
-                // --- SPAWN PARTICLES ---
+                // Spawn Particles
                 if (blockSparksPrefab != null && blockEffectSpawnPoint != null)
                 {
-                    // Instantiate the sparks at the spawn point.
-                    // We rotate them to face the enemy so the sparks fly towards the impact.
                     Vector3 directionToEnemy = (enemyScript.transform.position - transform.position).normalized;
                     Quaternion sparkRotation = Quaternion.LookRotation(directionToEnemy);
-                    
                     GameObject sparks = Instantiate(blockSparksPrefab, blockEffectSpawnPoint.position, sparkRotation);
-                    
-                    // Destroy the sparks after 1 second to keep the game clean
                     Destroy(sparks, 1.0f);
                 }
-                // -----------------------
 
                 enemyScript.canDealDamage = false; 
                 return; 
             }
             else
             {
-                health = health - 10;
+                // TAKE DAMAGE via CharacterStats
+                if (_stats != null)
+                {
+                    _stats.TakeDamage(10);
+                }
+                
                 enemyScript.canDealDamage = false;
             }
         }
