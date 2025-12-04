@@ -7,6 +7,7 @@ public class PlayerControl : MonoBehaviour
     [Header("UI")]
     public Slider healthbar;
     public TMP_Text healthText;
+    
 
     [Header("Stats")]
     public int health = 100;

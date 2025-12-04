@@ -4,7 +4,7 @@ using UnityEngine.AI;
 using UnityEngine.AI;
 
 [RequireComponent(typeof(NavMeshAgent), typeof(Animator))]
-public class SkeletonAI_MultiGAIL : MonoBehaviour
+public class SkeletonAI : MonoBehaviour
 {
     // --- Definitions ---
     public enum AIState
@@ -42,7 +42,7 @@ public class SkeletonAI_MultiGAIL : MonoBehaviour
     private Transform _target;
     private float _stateTimer; // How long we've been in the current state
     private bool _isActionLocked = false;
-
+    public bool canDealDamage = false;
     // --- Hashes ---
     private static readonly int MoveX = Animator.StringToHash("MoveX");
     private static readonly int MoveZ = Animator.StringToHash("MoveZ");
@@ -161,6 +161,7 @@ public class SkeletonAI_MultiGAIL : MonoBehaviour
     {
         _isActionLocked = true;
         _agent.isStopped = true;
+        canDealDamage = true;
         SwitchState(AIState.Attacking);
 
         // Select Attack based on Persona & Distance
