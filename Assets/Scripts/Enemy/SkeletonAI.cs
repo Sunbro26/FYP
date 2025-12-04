@@ -16,13 +16,13 @@ public class SkeletonAI : MonoBehaviour
         Attacking       // Locked in animation
     }
 
-    // --- Persona Settings (Crucial for MultiGAIL Data Generation) ---
+    // --- Persona Settings ---
     [System.Serializable]
     public class AIPersona
     {
-        [Range(0, 1)] public float aggression = 0.5f; // Chance to attack vs circle
-        [Range(0, 1)] public float caution = 0.5f;    // Chance to retreat after attacking
-        [Range(0, 1)] public float fear = 0.2f;       // Chance to regroup at low health
+        [Range(0, 1)] public float aggression = 0.5f; 
+        [Range(0, 1)] public float caution = 0.5f;    
+        [Range(0, 1)] public float fear = 0.2f;       
         public float preferredCombatRange = 3.0f;
     }
 
@@ -34,25 +34,43 @@ public class SkeletonAI : MonoBehaviour
     public float circleSpeed = 2.5f;
     public float retreatDistance = 5.0f;
 
+    // --- NEW: Combat Timing Settings (From Script 2) ---
+    [Header("Combat Timing & Hitboxes")]
+    [Tooltip("Total length of the animation clip.")]
+    public float attackAnimationDuration = 1.2f;
+    
+    [Tooltip("Time to wait AFTER animation starts before damage is enabled (Wind-up).")]
+    public float damageStartDelay = 0.5f; 
+
+    [Tooltip("How long the damage stays active (The actual Swing).")]
+    public float damageWindowDuration = 0.2f;
+
     // --- State Variables ---
     private AIState _currentState;
     private NavMeshAgent _agent;
     private Animator _animator;
     private Transform _target;
-    private float _stateTimer; // How long we've been in the current state
+    private float _stateTimer; 
     private bool _isActionLocked = false;
+    
+    // Public flag for the PlayerControl script to check
     public bool canDealDamage = false;
+
     // --- Hashes ---
     private static readonly int MoveX = Animator.StringToHash("MoveX");
     private static readonly int MoveZ = Animator.StringToHash("MoveZ");
     private static readonly int AttackIndex = Animator.StringToHash("AttackIndex");
-    private static readonly int TriggerAttack = Animator.StringToHash("TriggerAttack");
+    // Note: Make sure your Trigger in the Animator is named "TriggerAttack"
+    private static readonly int TriggerAttack = Animator.StringToHash("TriggerAttack"); 
 
     void Start()
     {
         _agent = GetComponent<NavMeshAgent>();
         _animator = GetComponent<Animator>();
-        _target = GameObject.FindGameObjectWithTag("Player").transform;
+        
+        GameObject playerObj = GameObject.FindGameObjectWithTag("Player");
+        if (playerObj != null)
+            _target = playerObj.transform;
         
         // Start passive
         SwitchState(AIState.Idle);
@@ -60,27 +78,27 @@ public class SkeletonAI : MonoBehaviour
 
     void Update()
     {
+        if (_target == null) return;
         if (_isActionLocked) return; // Don't move if mid-attack
 
-        // 1. SENSORY UPDATE (Input for Logic)
+        // 1. SENSORY UPDATE
         float distance = Vector3.Distance(transform.position, _target.position);
-        float healthPct = 1.0f; // Replace with actual Health component linkage later
+        float healthPct = 1.0f; 
 
-        // 2. LOGIC UPDATE (The "Brain" - To be replaced by ML later)
-        // In ML version, this function would be replaced by RequestDecision()
+        // 2. LOGIC UPDATE
         DecideNextState(distance, healthPct);
 
-        // 3. EXECUTION UPDATE (The "Body")
+        // 3. EXECUTION UPDATE
         ExecuteStateLogic(distance);
         
-        // 4. ROTATION (Always face target unless fleeing)
+        // 4. ROTATION 
         if (_currentState != AIState.Regrouping) FaceTarget();
     }
 
-    // --- THE BRAIN (Heuristic Logic for Data Generation) ---
+    // --- THE BRAIN ---
     void DecideNextState(float dist, float health)
     {
-        // Global Override: Fear/Regroup
+        // Fear/Regroup Override
         if (health < 0.3f && Random.value < currentPersona.fear)
         {
             if (_currentState != AIState.Regrouping) SwitchState(AIState.Regrouping);
@@ -98,12 +116,12 @@ public class SkeletonAI : MonoBehaviour
                 break;
 
             case AIState.Circling:
-                // Randomly decide to Attack based on Aggression
+                // Random Attack
                 if (_stateTimer > 1.0f && Random.value < (currentPersona.aggression * Time.deltaTime))
                 {
                     StartCoroutine(PerformAttackLogic());
                 }
-                // Randomly decide to Retreat if too close
+                // Random Retreat
                 else if (dist < currentPersona.preferredCombatRange * 0.5f)
                 {
                     SwitchState(AIState.Retreating);
@@ -118,7 +136,7 @@ public class SkeletonAI : MonoBehaviour
         _stateTimer += Time.deltaTime;
     }
 
-    // --- THE BODY (Movement Execution) ---
+    // --- THE BODY ---
     void ExecuteStateLogic(float dist)
     {
         switch (_currentState)
@@ -131,15 +149,13 @@ public class SkeletonAI : MonoBehaviour
 
             case AIState.Circling:
                 _agent.isStopped = true;
-                // Complex Strafing Logic
-                Vector3 strafeDir = transform.right * Mathf.Sin(Time.time * circleSpeed); // Simple oscillating strafe
+                Vector3 strafeDir = transform.right * Mathf.Sin(Time.time * circleSpeed);
                 _agent.Move(strafeDir * Time.deltaTime);
                 UpdateAnim(Mathf.Sin(Time.time), 0); 
                 break;
 
             case AIState.Retreating:
                 _agent.isStopped = false;
-                // Calculate position away from player
                 Vector3 fleeDir = (transform.position - _target.position).normalized;
                 _agent.SetDestination(transform.position + fleeDir * 2f);
                 UpdateAnim(0, -1); // Walk Backwards
@@ -147,34 +163,54 @@ public class SkeletonAI : MonoBehaviour
 
             case AIState.Regrouping:
                 _agent.isStopped = false;
-                // Run far away
                 Vector3 runAwayPos = transform.position + (transform.position - _target.position).normalized * 10f;
                 _agent.SetDestination(runAwayPos);
-                UpdateAnim(0, 1); // Run Forward (away)
+                UpdateAnim(0, 1); // Run Forward
                 break;
         }
     }
 
-    // --- ATTACK SYSTEM (The Complex Patterns) ---
+    // --- ATTACK SYSTEM (MERGED LOGIC) ---
     IEnumerator PerformAttackLogic()
     {
+        // 1. Setup State
         _isActionLocked = true;
         _agent.isStopped = true;
-        canDealDamage = true;
         SwitchState(AIState.Attacking);
+        
+        // Ensure we face the player before swinging
+        FaceTarget();
 
-        // Select Attack based on Persona & Distance
-        // This is where your list of 16 attacks goes
+        // 2. Trigger Animation
         int attackID = ChooseAttackBasedOnContext();
-
         _animator.SetInteger(AttackIndex, attackID);
         _animator.SetTrigger(TriggerAttack);
 
-        // Wait for animation to finish (simulated here)
-        float animLength = 1.5f; // Replace with actual clip length query
-        yield return new WaitForSeconds(animLength);
+        // --- TIMING LOGIC FROM SCRIPT 2 STARTS HERE ---
 
-        // Decision after attack: Retreat or stay?
+        // 3. WAIT for wind-up (Damage is OFF)
+        yield return new WaitForSeconds(damageStartDelay);
+
+        // 4. ENABLE Damage (The Swing)
+        canDealDamage = true;
+
+        // 5. WAIT for swing duration
+        yield return new WaitForSeconds(damageWindowDuration);
+
+        // 6. DISABLE Damage (The Recovery)
+        // This ensures no damage happens at the end of the animation
+        canDealDamage = false;
+
+        // 7. WAIT for remainder of animation
+        float remainingTime = attackAnimationDuration - damageStartDelay - damageWindowDuration;
+        if (remainingTime > 0)
+        {
+            yield return new WaitForSeconds(remainingTime);
+        }
+
+        // --- TIMING LOGIC ENDS ---
+
+        // 8. Decide next move (Persona Logic)
         if (Random.value < currentPersona.caution)
         {
             SwitchState(AIState.Retreating);
@@ -184,6 +220,7 @@ public class SkeletonAI : MonoBehaviour
             SwitchState(AIState.Circling);
         }
 
+        if (_agent.isOnNavMesh) _agent.isStopped = false;
         _isActionLocked = false;
     }
 
@@ -191,8 +228,6 @@ public class SkeletonAI : MonoBehaviour
     {
         float dist = Vector3.Distance(transform.position, _target.position);
         
-        // Example Logic:
-        // 0: Basic Slash, 1: Dash Attack, 2: Heavy AOE
         if (dist > 4.0f) return 1; // Dash attack if far
         if (dist < 1.5f) return 2; // AOE if very close
         return 0; // Basic slash otherwise
@@ -215,7 +250,10 @@ public class SkeletonAI : MonoBehaviour
     {
         Vector3 dir = (_target.position - transform.position).normalized;
         dir.y = 0;
-        Quaternion lookRot = Quaternion.LookRotation(dir);
-        transform.rotation = Quaternion.Slerp(transform.rotation, lookRot, Time.deltaTime * 5f);
+        if (dir != Vector3.zero)
+        {
+            Quaternion lookRot = Quaternion.LookRotation(dir);
+            transform.rotation = Quaternion.Slerp(transform.rotation, lookRot, Time.deltaTime * 5f);
+        }
     }
 }
