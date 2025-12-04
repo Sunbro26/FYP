@@ -6,15 +6,22 @@ using System;
 public class PlayerDodge : MonoBehaviour
 {
     public static event Action OnPlayerDodge;
+
     [Header("Dodge Settings")]
-    [Tooltip("How far the character will dodge.")]
     public float dodgeDistance = 5f;
-    [Tooltip("The duration of the dodge. This should be slightly less than the animation's length.")]
     public float dodgeDuration = 0.6f;
-    [Tooltip("How quickly the character turns to face the dodge direction.")]
     public float dodgeRotationSpeed = 15f;
 
-    // References to other components
+    [Header("I-Frame Settings")]
+    [Tooltip("How long to wait after dodge starts before invincibility kicks in.")]
+    public float iFrameStartDelay = 0.2f; 
+    [Tooltip("How long the player stays invincible.")]
+    public float iFrameDuration = 0.3f;
+
+    // Public property for other scripts to check
+    public bool IsInvincible { get; private set; }
+
+    // References
     private CharacterController _characterController;
     private Animator _animator;
     private Walk _walkScript;
@@ -36,15 +43,16 @@ public class PlayerDodge : MonoBehaviour
         _cameraTransform = Camera.main.transform;
     }
 
+    public bool IsDodging()
+    {
+        return _isDodging;
+    }
+
     public void OnDodge(InputAction.CallbackContext context)
     {
         if (context.started && !_isDodging && (_attackScript == null || !_attackScript.IsAttacking()))
         {
-            // --- THE FIX (PART 1) ---
-            // Lock movement IMMEDIATELY to prevent the Walk script from causing a slide this frame.
             if (_walkScript != null) _walkScript.IsMovementLocked = true;
-
-            // Now start the coroutine.
             StartCoroutine(DodgeSequence());
         }
     }
@@ -52,18 +60,18 @@ public class PlayerDodge : MonoBehaviour
     private IEnumerator DodgeSequence()
     {
         _isDodging = true;
-
-        // --- THE FIX (PART 2) ---
-        // The movement lock is now handled in OnDodge(), so we can remove this line.
-        // if (_walkScript != null) _walkScript.IsMovementLocked = true; 
         
-        // We still disable attacking to prevent a dodge-attack combo.
         if (_attackScript != null) _attackScript.enabled = false;
 
         _animator.SetTrigger(DodgeTrigger);
 
         OnPlayerDodge?.Invoke(); 
-        // --- All the dodge direction and movement logic remains the same ---
+
+        // --- I-FRAME LOGIC STARTS HERE ---
+        // We start the I-Frame timer in parallel so it doesn't stop the movement loop
+        StartCoroutine(HandleIFrames());
+
+        // --- MOVEMENT CALCULATION ---
         Vector2 moveInput = _walkScript.GetMoveInput();
         Vector3 dodgeDirection;
         Vector3 cameraForward = new Vector3(_cameraTransform.forward.x, 0, _cameraTransform.forward.z).normalized;
@@ -80,6 +88,7 @@ public class PlayerDodge : MonoBehaviour
 
         Quaternion targetRotation = Quaternion.LookRotation(dodgeDirection);
 
+        // --- MOVEMENT LOOP ---
         float timer = 0f;
         while (timer < dodgeDuration)
         {
@@ -92,16 +101,28 @@ public class PlayerDodge : MonoBehaviour
         
         transform.rotation = targetRotation;
 
-        // Unlock movement and re-enable attacking at the end.
+        // Safety reset to ensure player isn't invincible if logic desyncs
+        IsInvincible = false;
+
         if (_walkScript != null) _walkScript.IsMovementLocked = false;
         if (_attackScript != null) _attackScript.enabled = true;
 
         _isDodging = false;
     }
 
-    // Public method for other scripts to check the dodge state
-    public bool IsDodging()
+    // This runs purely to toggle the boolean at the right times
+    private IEnumerator HandleIFrames()
     {
-        return _isDodging;
+        // 1. Wait for the start delay (vulnerability at start of dodge)
+        yield return new WaitForSeconds(iFrameStartDelay);
+
+        // 2. Turn on Invincibility
+        IsInvincible = true;
+
+        // 3. Wait for the i-frame duration
+        yield return new WaitForSeconds(iFrameDuration);
+
+        // 4. Turn off Invincibility (vulnerability at end of dodge)
+        IsInvincible = false;
     }
 }
