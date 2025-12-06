@@ -25,12 +25,13 @@ public class CharacterStats : MonoBehaviour
     // Flag to check if dead (or defeated)
     public bool IsDead => currentHealth <= 0;
 
-    void Start()
+    void Awake()
     {
-        // Initialization
         currentHealth = maxHealth;
         currentStamina = maxStamina;
-
+    }
+    void Start()
+    {
         UpdateUI();
     }
 
