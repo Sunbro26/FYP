@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
 
@@ -8,59 +9,70 @@ public class SkeletonAI : MonoBehaviour
     // --- Definitions ---
     public enum AIState
     {
-        Idle,           // Waiting/Ambush
-        Chasing,        // Closing distance directly
-        Circling,       // Combat stance, strafing
-        Retreating,     // Backing off
+        Idle,           // Waiting for player
+        Strategizing,   // Circling while deciding on a plan
+        Maneuvering,    // Moving to the specific range required by the plan
         Attacking,      // Locked in animation
-        Stunned         // Parried/Hit
+        Retreating,     // Defensive retreat (Bait/Reset)
+        Stunned         // Parried
+    }
+
+[System.Serializable]
+    public class AIPersona
+    {
+        [Range(0, 1)] public float aggression = 0.7f; 
+        [Range(0, 1)] public float fear = 0.2f;       
+        public float decisionFrequency = 2.0f; 
+        public float preferredCombatRange = 2.5f; 
     }
 
     [System.Serializable]
-    public class AIPersona
+    public class EnemyAttack
     {
-        [Range(0, 1)] public float aggression = 0.7f; // High = Attack when close. Low = Run when close.
-        public float preferredCombatRange = 2.5f;     // The "Sweet Spot"
+        public string name;             // e.g. "Dash Attack"
+        public int animationIndex;      // Matches Animator
+        public float optimalRange;      // e.g. 6.0 for Dash, 1.5 for Slash
+        public float rangeTolerance = 0.5f; // Precision needed
+        public float weight = 1.0f;     // Likelihood of picking
+        public bool requiresLineOfSight = true;
     }
 
     [Header("Configuration")]
     public AIPersona currentPersona;
     public float sensorRadius = 15f;
-    
-    [Header("Movement Physics")]
     public float circleSpeed = 2.5f;
-    public float retreatDistance = 1.5f; // If closer than this, we react
-    public float stateCommitmentTime = 0.5f; // Min time to stay in a state (Prevents jitter)
 
-    [Header("Combat Hitboxes")]
-    public float damageStartDelay = 0.4f; 
+    [Header("Attack Library")]
+    public List<EnemyAttack> availableAttacks; // POPULATE THIS IN INSPECTOR!
+
+    [Header("Combat Timing")]
+    public float damageStartDelay = 0.4f;
     public float damageWindowDuration = 0.2f;
     public float attackAnimDuration = 1.2f;
 
-    // --- Internal State ---
+    // --- State Variables ---
     private AIState _currentState;
     private NavMeshAgent _agent;
     private Animator _animator;
     private Transform _target;
-    private float _stateTimer; 
-    private float _cooldownTimer;
+    private EnemyAttack _plannedAttack; // The GOAL
+    private float _decisionTimer;
     private bool _isActionLocked = false;
-    private int _retreatType = 0; // 0=Bait, 1=Reset, 2=RangedSetup
-    
-    // Public flag for Player damage script
-    public bool canDealDamage = false;
+    private int _retreatType = 0; // 0=Bait, 1=Reset
 
-    // Circling variables
-    private float _strafeDirection = 1f; // 1 = Right, -1 = Left
+    // Circling vars
+    private float _strafeDirection = 1f;
     private float _strafeTimer = 0f;
-    private float _strafeChangeInterval = 3.0f; // How often we switch direction
+
+    // Components
+    public bool canDealDamage = false;
 
     // --- Hashes ---
     private static readonly int MoveX = Animator.StringToHash("MoveX");
     private static readonly int MoveZ = Animator.StringToHash("MoveZ");
     private static readonly int AttackIndex = Animator.StringToHash("AttackIndex");
     private static readonly int TriggerAttack = Animator.StringToHash("TriggerAttack");
-    private static readonly int AttackSpeedHash = Animator.StringToHash("AttackSpeed"); // For Parry
+    private static readonly int AttackSpeedHash = Animator.StringToHash("AttackSpeed");
 
     void Start()
     {
@@ -68,6 +80,9 @@ public class SkeletonAI : MonoBehaviour
         _animator = GetComponent<Animator>();
         GameObject p = GameObject.FindGameObjectWithTag("Player");
         if (p) _target = p.transform;
+
+        // Default setup
+        if(availableAttacks.Count == 0) Debug.LogError("Add Attacks to the List in Inspector!");
         
         SwitchState(AIState.Idle);
     }
@@ -75,231 +90,252 @@ public class SkeletonAI : MonoBehaviour
     void Update()
     {
         if (_target == null) return;
-        
-        // Cooldowns tick down constantly
-        if (_cooldownTimer > 0) _cooldownTimer -= Time.deltaTime;
-        _stateTimer += Time.deltaTime;
-
-        // 1. If we are locked in an attack or stunned, do nothing else.
-        if (_isActionLocked) return;
+        if (_isActionLocked) return; 
 
         float distance = Vector3.Distance(transform.position, _target.position);
 
-        // 2. DECISION LOGIC
-        if (_stateTimer > stateCommitmentTime) 
-        {
-            EvaluateState(distance);
-        }
+        // 1. BRAIN: Decide Strategy
+        DecideStrategy(distance);
 
-        // 3. EXECUTION LOGIC
+        // 2. BODY: Execute Movement based on Strategy
         ExecuteStateMovement(distance);
-        
-        // 4. ROTATION
+
         if (_currentState != AIState.Stunned) FaceTarget();
     }
 
-    // --- THE UNIFIED BRAIN ---
-    void EvaluateState(float dist)
+    // --- THE GOAL-ORIENTED BRAIN ---
+    void DecideStrategy(float dist)
     {
         switch (_currentState)
         {
             case AIState.Idle:
-                if (dist < sensorRadius) SwitchState(AIState.Chasing);
+                if (dist < sensorRadius) SwitchState(AIState.Strategizing);
                 break;
 
-            case AIState.Chasing:
-                if (dist <= currentPersona.preferredCombatRange) SwitchState(AIState.Circling);
-                break;
-
-            case AIState.Circling:
-                // Player too close?
-                if (dist < retreatDistance)
+            case AIState.Strategizing:
+                // We are circling, looking for an opening.
+                _decisionTimer += Time.deltaTime;
+                // 1. Interrupt: Too Close?
+                if (dist < 1.5f && Random.value < currentPersona.aggression)
                 {
-                    // Aggressive = Punish. Passive = Retreat.
-                    if (_cooldownTimer <= 0 && Random.value < currentPersona.aggression)
-                    {
-                        StartCoroutine(ExecuteAttackRoutine(0)); // 0 = Close Range Slash
-                    }
-                    else
-                    {
-                        SwitchState(AIState.Retreating);
-                    }
+                    // Panic/Punish Attack (Force Basic Slash)
+                    _plannedAttack = availableAttacks[0]; // Assuming 0 is fast slash
+                    StartCoroutine(ExecuteAttackRoutine());
+                    return;
                 }
-                // Random Attack from neutral
-                else if (_cooldownTimer <= 0 && Random.value < (currentPersona.aggression * Time.deltaTime))
+
+                // 2. Make a Plan
+                if (_decisionTimer > currentPersona.decisionFrequency)
                 {
-                    int atkID = (dist > 3.5f) ? 1 : 0; // 1 = Dash, 0 = Slash
-                    StartCoroutine(ExecuteAttackRoutine(atkID));
+                    _plannedAttack = ChooseNextAttackStrategy();
+                    Debug.Log($"Plan Formulated: Perform {_plannedAttack.name} at range {_plannedAttack.optimalRange}");
+                    SwitchState(AIState.Maneuvering);
+                }
+                break;
+
+            case AIState.Maneuvering:
+                // We have a plan. Are we in position?
+                if (IsPositionedForPlan(dist))
+                {
+                    StartCoroutine(ExecuteAttackRoutine());
+                }
+                
+                // Failsafe: If maneuvering takes too long (stuck?), give up
+                _decisionTimer += Time.deltaTime;
+                if (_decisionTimer > 5.0f)
+                {
+                    Debug.Log("Plan Aborted: Took too long.");
+                    _plannedAttack = null;
+                    SwitchState(AIState.Strategizing);
                 }
                 break;
 
             case AIState.Retreating:
-                _retreatType = Random.Range(0, 2); // Pick a random retreat behavior Change later
-                // --- SUB-BEHAVIOR 1: THE BAIT (33% Chance) ---
-                if (_retreatType == 0)
+                // Logic for Baits/Resets (Same as before)
+                if (_retreatType == 0) // Bait
                 {
-                    // If player bites the bait (chases close), PUNISH.
-                    if (dist < 2.0f && _cooldownTimer <= 0)
-                    {
-                        StartCoroutine(ExecuteAttackRoutine(0)); // Fast Slash
-                        return;
-                    }
-                    // Exit condition: Standard range
-                    if (dist > currentPersona.preferredCombatRange) SwitchState(AIState.Circling);
+                    if (dist < 2.0f) { StartCoroutine(ExecuteAttackRoutine()); return; } // Punish
+                    if (dist > currentPersona.preferredCombatRange) SwitchState(AIState.Strategizing);
                 }
-
-                // --- SUB-BEHAVIOR 2: THE RESET (33% Chance) ---
-                else if (_retreatType == 1)
+                else if (_retreatType == 1) // Reset
                 {
-                    // Ignore player proximity! Keep running until FAR away.
-                    // This forces a complete break in combat.
-                    if (dist > 6.0f) 
-                    {
-                        // Once we are far, we don't just circle... we switch to IDLE or CHASING
-                        // to trigger a "fresh" start to the fight (e.g., a Dash Attack in Chasing)
-                        SwitchState(AIState.Chasing); 
-                    }
-                }
-
-                // // --- SUB-BEHAVIOR 3: RANGED SETUP (33% Chance) ---
-                // else if (_retreatType == 2)
-                // {
-                //     // As soon as we have a TINY bit of breathing room (4m)...
-                //     if (dist > 4.0f && _cooldownTimer <= 0)
-                //     {
-                //         // ... Launch a projectile or Dash Attack immediately!
-                //         // Assuming AttackID 2 is a Ranged/Gap Closer move
-                //         StartCoroutine(ExecuteAttackRoutine(2)); 
-                //         return;
-                //     }
-                // }
-
-                // Failsafe for all types: If stuck, panic attack
-                if (_stateTimer > 3.0f && _cooldownTimer <= 0)
-                {
-                    StartCoroutine(ExecuteAttackRoutine(0));
+                    if (dist > 7.0f) SwitchState(AIState.Strategizing);
                 }
                 break;
         }
     }
 
-    // --- THE BODY ---
+    // --- THE BODY (Context-Aware Movement) ---
     void ExecuteStateMovement(float dist)
     {
         switch (_currentState)
         {
-            case AIState.Chasing:
-                _agent.isStopped = false;
-                _agent.SetDestination(_target.position);
-                UpdateAnim(0, 1);
+            case AIState.Strategizing:
+                // Just circle/strafe menacingly
+                _agent.isStopped = true;
+                HandleCirclingMovement();
                 break;
 
-            case AIState.Circling:
-                _agent.isStopped = true;
+            case AIState.Maneuvering:
+                // GOAL MOVEMENT: Move specifically to satisfy the plan
+                if (_plannedAttack == null) return;
 
-                // 1. Calculate the vector pointing from Enemy -> Player
-                Vector3 toPlayer = (_target.position - transform.position).normalized;
+                _agent.isStopped = false;
+                float targetRange = _plannedAttack.optimalRange;
 
-                // 2. Calculate the Tangent (The vector perpendicular to the look direction)
-                // Cross Product of "Forward" and "Up" gives us "Right" relative to the connection line.
-                Vector3 tangent = Vector3.Cross(toPlayer, Vector3.up);
-
-                // 3. Handle Direction Switching (So we don't circle forever in one way)
-                _strafeTimer += Time.deltaTime;
-                if (_strafeTimer > _strafeChangeInterval)
+                // Logic: How do I get to optimal range?
+                if (dist > targetRange + _plannedAttack.rangeTolerance)
                 {
-                    // Pick a random new direction (Left or Right)
-                    _strafeDirection = (Random.value > 0.5f) ? 1f : -1f;
-                    
-                    // Randomize how long we circle this way (2 to 5 seconds)
-                    _strafeChangeInterval = Random.Range(2.0f, 5.0f);
-                    _strafeTimer = 0f;
+                    // Too far? Chase.
+                    _agent.SetDestination(_target.position);
+                    UpdateAnim(0, 1); 
                 }
-
-                // 4. Move along the tangent
-                // Note: We use _strafeDirection to flip the vector for left/right
-                Vector3 finalMove = tangent * _strafeDirection * circleSpeed * Time.deltaTime;
-                
-                // 5. Optional: Slight Drift Correction
-                // If we are too far, blend slightly forward. If too close, blend slightly back.
-                float error = dist - currentPersona.preferredCombatRange;
-                
-                // Add a tiny bit of forward/backward movement to correct the radius
-                Vector3 correction = toPlayer * error * 0.5f * Time.deltaTime; 
-
-                _agent.Move(finalMove + correction);
-                UpdateAnim(_strafeDirection, 0); 
+                else if (dist < targetRange - _plannedAttack.rangeTolerance)
+                {
+                    // Too close? Back up (Tactical Retreat)
+                    Vector3 fleeDir = (transform.position - _target.position).normalized;
+                    _agent.SetDestination(transform.position + fleeDir * 2f);
+                    UpdateAnim(0, -1);
+                }
+                else
+                {
+                    // In position! Stop.
+                    _agent.isStopped = true;
+                    UpdateAnim(0, 0);
+                }
                 break;
 
             case AIState.Retreating:
                 _agent.isStopped = false;
-                Vector3 retreatPos = transform.position + (transform.position - _target.position).normalized * 2f;
+                Vector3 retreatPos = transform.position + (transform.position - _target.position).normalized * 4f;
                 _agent.SetDestination(retreatPos);
                 UpdateAnim(0, -1);
                 break;
         }
     }
 
-    // --- COMBAT EXECUTION ---
-    IEnumerator ExecuteAttackRoutine(int attackID)
+    // --- HELPER LOGIC ---
+
+    EnemyAttack ChooseNextAttackStrategy()
+    {
+        // Weighted Random Choice
+        float totalWeight = 0;
+        foreach (var atk in availableAttacks) totalWeight += atk.weight;
+
+        float randomValue = Random.Range(0, totalWeight);
+        float cursor = 0;
+
+        foreach (var atk in availableAttacks)
+        {
+            cursor += atk.weight;
+            if (cursor >= randomValue) return atk;
+        }
+        return availableAttacks[0]; // Fallback
+    }
+
+    bool IsPositionedForPlan(float dist)
+    {
+        if (_plannedAttack == null) return false;
+        // Check if distance is within tolerance of optimal range
+        return Mathf.Abs(dist - _plannedAttack.optimalRange) <= _plannedAttack.rangeTolerance;
+    }
+
+    void HandleCirclingMovement()
+    {
+        // Tangent Circling Logic
+        Vector3 toPlayer = (_target.position - transform.position).normalized;
+        Vector3 tangent = Vector3.Cross(toPlayer, Vector3.up);
+
+        _strafeTimer += Time.deltaTime;
+        if (_strafeTimer > 3.0f)
+        {
+            _strafeDirection = (Random.value > 0.5f) ? 1f : -1f;
+            _strafeTimer = 0f;
+        }
+
+        Vector3 finalMove = tangent * _strafeDirection * circleSpeed * Time.deltaTime;
+        
+        // Drift Correction (Pull to preferred range)
+        float dist = Vector3.Distance(transform.position, _target.position);
+        float error = dist - currentPersona.preferredCombatRange;
+        Vector3 correction = toPlayer * error * 0.5f * Time.deltaTime; 
+
+        _agent.Move(finalMove + correction);
+        
+        // Smooth Anim
+        UpdateAnim(_strafeDirection, 0);
+    }
+
+    // --- ATTACK EXECUTION ---
+    // --- ATTACK EXECUTION ---
+    IEnumerator ExecuteAttackRoutine()
     {
         _isActionLocked = true;
         _agent.isStopped = true;
         SwitchState(AIState.Attacking);
+        
+        int animIndex = (_plannedAttack != null) ? _plannedAttack.animationIndex : 0;
 
-        _animator.SetInteger(AttackIndex, attackID);
+        _animator.SetInteger(AttackIndex, animIndex);
         _animator.SetTrigger(TriggerAttack);
 
-        yield return new WaitForSeconds(damageStartDelay);
+        // --- NEW: FACE TARGET DURING WIND-UP ---
+        // Instead of just waiting, we loop through the delay time 
+        // and force the AI to keep rotating towards the player.
+        float timer = 0f;
+        while (timer < damageStartDelay)
+        {
+            FaceTarget(); // Keep tracking the player!
+            timer += Time.deltaTime;
+            yield return null; // Wait for next frame
+        }
+
+        // --- SWING PHASE (Damage ON) ---
+        // Now we stop rotating so the player can dodge the actual swing
         canDealDamage = true;
         yield return new WaitForSeconds(damageWindowDuration);
         canDealDamage = false;
 
+        // --- RECOVERY PHASE ---
         float remaining = attackAnimDuration - damageStartDelay - damageWindowDuration;
         if (remaining > 0) yield return new WaitForSeconds(remaining);
 
-        _cooldownTimer = Mathf.Lerp(2.0f, 0.5f, currentPersona.aggression);
-        SwitchState(AIState.Circling);
-        _isActionLocked = false;
-    }
+        // Post-Attack Decision
+        if (Random.value < currentPersona.fear)
+        {
+            _retreatType = 1; // Reset
+            SwitchState(AIState.Retreating);
+        }
+        else
+        {
+            SwitchState(AIState.Strategizing);
+        }
 
+        _plannedAttack = null; 
+        _isActionLocked = false;
+        _decisionTimer = 0;
+    }
     // --- PARRY LOGIC ---
     public void GetParried()
     {
-        // 1. Interrupt EVERYTHING
         StopAllCoroutines(); 
-        
         _isActionLocked = true;
         _agent.isStopped = true;
-        canDealDamage = false; // Sword is harmless immediately
-        
-        SwitchState(AIState.Stunned); // Important for Logic to know we are stunned
-
-        // 2. Start the Stun Routine
+        canDealDamage = false; 
+        SwitchState(AIState.Stunned); 
         StartCoroutine(ParryReboundRoutine());
     }
 
     private IEnumerator ParryReboundRoutine()
     {
-        // 3. REVERSE THE ANIMATION (Visual Feedback)
-        // Ensure you have added the 'AttackSpeed' float parameter to your Animator!
-        // Link it to the Multiplier of your Attack State in the Animator graph.
         _animator.SetFloat(AttackSpeedHash, -1.0f);
-
-        // 4. Wait for bounce back
         yield return new WaitForSeconds(0.4f);
-
-        // 5. FREEZE (Stun Frame)
         _animator.SetFloat(AttackSpeedHash, 0f);
-        
-        // 6. Stun Duration (Free hits for player)
         yield return new WaitForSeconds(1.5f);
-
-        // 7. RECOVER
-        _animator.SetFloat(AttackSpeedHash, 1.0f); // Reset speed
-        _cooldownTimer = 1.0f; // Brief pause before attacking again
+        _animator.SetFloat(AttackSpeedHash, 1.0f);
         
-        SwitchState(AIState.Retreating); // Back off after getting wrecked
+        _retreatType = 1; // Always reset after stun
+        SwitchState(AIState.Retreating); 
         _isActionLocked = false;
     }
 
@@ -308,7 +344,13 @@ public class SkeletonAI : MonoBehaviour
     {
         if (_currentState == newState) return;
         _currentState = newState;
-        _stateTimer = 0;
+        _decisionTimer = 0; // Reset timer on state change
+        
+        // Init Retreat logic
+        if (newState == AIState.Retreating)
+        {
+            _retreatType = (Random.value > 0.5f) ? 0 : 1; 
+        }
     }
 
     void UpdateAnim(float x, float z)
