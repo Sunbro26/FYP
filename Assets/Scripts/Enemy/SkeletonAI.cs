@@ -45,6 +45,7 @@ public class SkeletonAI : MonoBehaviour
     private float _stateTimer; 
     private float _cooldownTimer;
     private bool _isActionLocked = false;
+    private int _retreatType = 0; // 0=Bait, 1=Reset, 2=RangedSetup
     
     // Public flag for Player damage script
     public bool canDealDamage = false;
@@ -133,10 +134,48 @@ public class SkeletonAI : MonoBehaviour
                 break;
 
             case AIState.Retreating:
-                if (dist > currentPersona.preferredCombatRange) SwitchState(AIState.Circling);
-                
-                // Anti-stuck: Attack if cornered
-                if (_stateTimer > 2.0f && _cooldownTimer <= 0)
+                _retreatType = Random.Range(0, 2); // Pick a random retreat behavior Change later
+                // --- SUB-BEHAVIOR 1: THE BAIT (33% Chance) ---
+                if (_retreatType == 0)
+                {
+                    // If player bites the bait (chases close), PUNISH.
+                    if (dist < 2.0f && _cooldownTimer <= 0)
+                    {
+                        StartCoroutine(ExecuteAttackRoutine(0)); // Fast Slash
+                        return;
+                    }
+                    // Exit condition: Standard range
+                    if (dist > currentPersona.preferredCombatRange) SwitchState(AIState.Circling);
+                }
+
+                // --- SUB-BEHAVIOR 2: THE RESET (33% Chance) ---
+                else if (_retreatType == 1)
+                {
+                    // Ignore player proximity! Keep running until FAR away.
+                    // This forces a complete break in combat.
+                    if (dist > 6.0f) 
+                    {
+                        // Once we are far, we don't just circle... we switch to IDLE or CHASING
+                        // to trigger a "fresh" start to the fight (e.g., a Dash Attack in Chasing)
+                        SwitchState(AIState.Chasing); 
+                    }
+                }
+
+                // // --- SUB-BEHAVIOR 3: RANGED SETUP (33% Chance) ---
+                // else if (_retreatType == 2)
+                // {
+                //     // As soon as we have a TINY bit of breathing room (4m)...
+                //     if (dist > 4.0f && _cooldownTimer <= 0)
+                //     {
+                //         // ... Launch a projectile or Dash Attack immediately!
+                //         // Assuming AttackID 2 is a Ranged/Gap Closer move
+                //         StartCoroutine(ExecuteAttackRoutine(2)); 
+                //         return;
+                //     }
+                // }
+
+                // Failsafe for all types: If stuck, panic attack
+                if (_stateTimer > 3.0f && _cooldownTimer <= 0)
                 {
                     StartCoroutine(ExecuteAttackRoutine(0));
                 }
@@ -224,7 +263,7 @@ public class SkeletonAI : MonoBehaviour
         _isActionLocked = false;
     }
 
-    // --- PARRY LOGIC (Restored!) ---
+    // --- PARRY LOGIC ---
     public void GetParried()
     {
         // 1. Interrupt EVERYTHING
