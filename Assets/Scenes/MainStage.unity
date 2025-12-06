@@ -2648,7 +2648,7 @@ MonoBehaviour:
     aggression: 0.5
     preferredCombatRange: 1.5
   sensorRadius: 15
-  circleSpeed: 2.5
+  circleSpeed: 1.25
   retreatDistance: 3
   stateCommitmentTime: 0.5
   damageStartDelay: 0.3
