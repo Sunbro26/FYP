@@ -35,7 +35,12 @@ public class SkeletonAI : MonoBehaviour
         public float rangeTolerance = 0.5f; // Precision needed
         public float weight = 1.0f;     // Likelihood of picking
         public bool requiresLineOfSight = true;
-    }
+
+        // --- NEW: Per-Attack Timing ---
+        public float windUpTime;      // How long before the hit happens?
+        public float damageDuration;  // How long is the hitbox active?
+        public float totalDuration;   // Total clip length
+    }   
 
     [Header("Configuration")]
     public AIPersona currentPersona;
@@ -44,11 +49,6 @@ public class SkeletonAI : MonoBehaviour
 
     [Header("Attack Library")]
     public List<EnemyAttack> availableAttacks; // POPULATE THIS IN INSPECTOR!
-
-    [Header("Combat Timing")]
-    public float damageStartDelay = 0.4f;
-    public float damageWindowDuration = 0.2f;
-    public float attackAnimDuration = 1.2f;
 
     // --- State Variables ---
     private AIState _currentState;
@@ -59,6 +59,10 @@ public class SkeletonAI : MonoBehaviour
     private float _decisionTimer;
     private bool _isActionLocked = false;
     private int _retreatType = 0; // 0=Bait, 1=Reset
+    [Header("Combat Timing")]
+    public float damageStartDelay = 0.4f;
+    public float damageWindowDuration = 0.2f;
+    public float attackAnimDuration = 1.2f;
 
     // Circling vars
     private float _strafeDirection = 1f;
@@ -279,28 +283,39 @@ public class SkeletonAI : MonoBehaviour
         _animator.SetInteger(AttackIndex, animIndex);
         _animator.SetTrigger(TriggerAttack);
 
-        // --- NEW: FACE TARGET DURING WIND-UP ---
-        // Instead of just waiting, we loop through the delay time 
-        // and force the AI to keep rotating towards the player.
+        // --- DEFINE TIMING VALUES ---
+        // Safety: If _plannedAttack is null (fallback), use global defaults. 
+        // Otherwise, use the specific data from the Inspector list.
+        float currentWindUp = (_plannedAttack != null) ? _plannedAttack.windUpTime : damageStartDelay;
+        float currentDamageWindow = (_plannedAttack != null) ? _plannedAttack.damageDuration : damageWindowDuration;
+        float currentTotalDuration = (_plannedAttack != null) ? _plannedAttack.totalDuration : attackAnimDuration;
+
+        // 1. WIND UP PHASE (Tracking Player)
+        // We loop here so we can keep facing the target during the windup
         float timer = 0f;
-        while (timer < damageStartDelay)
+        while (timer < currentWindUp) 
         {
-            FaceTarget(); // Keep tracking the player!
+            FaceTarget();
             timer += Time.deltaTime;
-            yield return null; // Wait for next frame
+            yield return null;
         }
 
-        // --- SWING PHASE (Damage ON) ---
-        // Now we stop rotating so the player can dodge the actual swing
+        // 2. SWING PHASE (Damage ON)
+        // We stop facing the target so the player can dodge sideways
         canDealDamage = true;
-        yield return new WaitForSeconds(damageWindowDuration);
+        yield return new WaitForSeconds(currentDamageWindow);
         canDealDamage = false;
 
-        // --- RECOVERY PHASE ---
-        float remaining = attackAnimDuration - damageStartDelay - damageWindowDuration;
-        if (remaining > 0) yield return new WaitForSeconds(remaining);
+        // 3. RECOVERY PHASE (The Fix)
+        // FIXED: We now use the 'current' variables, not the global ones.
+        float remaining = currentTotalDuration - currentWindUp - currentDamageWindow;
+        
+        if (remaining > 0) 
+        {
+            yield return new WaitForSeconds(remaining);
+        }
 
-        // Post-Attack Decision
+        // --- POST-ATTACK DECISION ---
         if (Random.value < currentPersona.fear)
         {
             _retreatType = 1; // Reset

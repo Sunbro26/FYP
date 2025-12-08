@@ -2658,12 +2658,18 @@ MonoBehaviour:
     rangeTolerance: 0.5
     weight: 5
     requiresLineOfSight: 0
+    windUpTime: 0.35
+    damageDuration: 1.4
+    totalDuration: 2
   - name: Dash Attack
     animationIndex: 1
     optimalRange: 2.5
     rangeTolerance: 1
     weight: 5
     requiresLineOfSight: 0
+    windUpTime: 0.9
+    damageDuration: 1.1
+    totalDuration: 2
   damageStartDelay: 0.3
   damageWindowDuration: 0.7
   attackAnimDuration: 1.2
@@ -11789,7 +11795,7 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 0.45000002, y: 0.87, z: 0.25}
+  m_Size: {x: 0.45000002, y: 0.9, z: 0.45}
   m_Center: {x: 0.006363415, y: -0.4053206, z: 0.0000011526657}
 --- !u!1 &1931043115
 GameObject:
