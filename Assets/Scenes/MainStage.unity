@@ -2670,6 +2670,60 @@ MonoBehaviour:
     windUpTime: 0.9
     damageDuration: 1.1
     totalDuration: 2
+  - name: Attack Horizontal
+    animationIndex: 2
+    optimalRange: 2.5
+    rangeTolerance: 0.5
+    weight: 5
+    requiresLineOfSight: 0
+    windUpTime: 0.9
+    damageDuration: 1.1
+    totalDuration: 2
+  - name: Attack Backhand
+    animationIndex: 3
+    optimalRange: 1
+    rangeTolerance: 0.5
+    weight: 5
+    requiresLineOfSight: 0
+    windUpTime: 0.9
+    damageDuration: 1.1
+    totalDuration: 2
+  - name: Attack 360
+    animationIndex: 4
+    optimalRange: 1.5
+    rangeTolerance: 0.5
+    weight: 5
+    requiresLineOfSight: 0
+    windUpTime: 0.9
+    damageDuration: 1.1
+    totalDuration: 2
+  - name: Combo Attack
+    animationIndex: 5
+    optimalRange: 1
+    rangeTolerance: 0.5
+    weight: 5
+    requiresLineOfSight: 0
+    windUpTime: 0.9
+    damageDuration: 1.1
+    totalDuration: 2
+  - name: Run Jump Attack
+    animationIndex: 6
+    optimalRange: 3
+    rangeTolerance: 1
+    weight: 5
+    requiresLineOfSight: 0
+    windUpTime: 0.9
+    damageDuration: 1.1
+    totalDuration: 2
+  - name: Kick
+    animationIndex: 7
+    optimalRange: 1
+    rangeTolerance: 0.5
+    weight: 5
+    requiresLineOfSight: 0
+    windUpTime: 0.9
+    damageDuration: 1.1
+    totalDuration: 2
   damageStartDelay: 0.3
   damageWindowDuration: 0.7
   attackAnimDuration: 1.2
