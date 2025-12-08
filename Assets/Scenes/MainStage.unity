@@ -2065,7 +2065,7 @@ MonoBehaviour:
   enemyLayers:
     serializedVersion: 2
     m_Bits: 64
-  hitRegistrationDelay: 0.3
+  hitRegistrationDelay: 0.75
 --- !u!114 &312797418
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2704,12 +2704,12 @@ MonoBehaviour:
     useFootHitbox: 0
   - name: Combo Attack
     animationIndex: 5
-    optimalRange: 1
-    rangeTolerance: 0.5
+    optimalRange: 1.5
+    rangeTolerance: 1
     weight: 5
     windUpTime: 0.75
-    damageDuration: 2.5
-    totalDuration: 4.2
+    damageDuration: 0.85
+    totalDuration: 4.16
     tracksPlayerDuringWindup: 1
     useFootHitbox: 0
   - name: Run Jump Attack
@@ -2735,7 +2735,7 @@ MonoBehaviour:
   swordMesh: {fileID: 1909943965}
   swordBone: {fileID: 1505110766}
   footBone: {fileID: 1562482256}
-  showDebugGizmos: 0
+  showDebugGizmos: 1
   hitRadius: 0.5
   canDealDamage: 0
 --- !u!136 &385033933

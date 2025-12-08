@@ -243,40 +243,98 @@ public class SkeletonAI : MonoBehaviour
         }
     }
 
-    // --- ATTACK EXECUTION ---
+    // --- ATTACK EXECUTION (UPDATED FOR COMBO) ---
     IEnumerator ExecuteAttackRoutine()
     {
         _isActionLocked = true;
         _agent.isStopped = true;
         SwitchState(AIState.Attacking);
         
+        // Use planned attack or fallback
         _currentExecutingAttack = _plannedAttack ?? availableAttacks[0];
         
+        // Trigger Animation
         _animator.SetInteger(AttackIndex, _currentExecutingAttack.animationIndex);
         _animator.SetTrigger(TriggerAttack);
 
-        float currentWindUp = _currentExecutingAttack.windUpTime;
-        float currentDamageWindow = _currentExecutingAttack.damageDuration;
-        float currentTotalDuration = _currentExecutingAttack.totalDuration;
-
-        float timer = 0f;
-        while (timer < currentWindUp) 
+        // --- SPECIAL LOGIC: CHECK FOR COMBO ATTACK ---
+        if (_currentExecutingAttack.name == "Combo Attack")
         {
-            if (_currentExecutingAttack.tracksPlayerDuringWindup) FaceTarget();
-            timer += Time.deltaTime;
-            yield return null;
+            // === HARDCODED COMBO TIMING ===
+            // Tweak these numbers to match your specific animation visual
+            
+            // HIT 1
+            float windup1 = 0.7f;
+            float duration1 = 0.85f;
+            
+            // HIT 2 (Time between end of Hit 1 and start of Hit 2)
+            float windup2 = 0.1f; 
+            float duration2 = 0.85f;
+
+            // HIT 3 (Time between end of Hit 2 and start of Hit 3)
+            float windup3 = 0.1f;
+            float duration3 = 0.85f;
+
+            // --- EXECUTE HIT 1 ---
+            float timer = 0f;
+            while (timer < windup1) 
+            {
+                FaceTarget(); // Track player for first hit
+                timer += Time.deltaTime;
+                yield return null;
+            }
+            canDealDamage = true;
+            yield return new WaitForSeconds(duration1);
+            canDealDamage = false;
+
+            // --- EXECUTE HIT 2 ---
+            // Optional: FaceTarget() here if you want tracking on second swing
+            yield return new WaitForSeconds(windup2); 
+            canDealDamage = true;
+            yield return new WaitForSeconds(duration2);
+            canDealDamage = false;
+
+            // --- EXECUTE HIT 3 ---
+            // Optional: FaceTarget() here if you want tracking on third swing
+            yield return new WaitForSeconds(windup3); 
+            canDealDamage = true;
+            yield return new WaitForSeconds(duration3);
+            canDealDamage = false;
+
+            // --- CALCULATE REMAINING TIME ---
+            // Total time spent so far
+            float timeSpent = windup1 + duration1 + windup2 + duration2 + windup3 + duration3;
+            float remaining = _currentExecutingAttack.totalDuration - timeSpent;
+            
+            if (remaining > 0) yield return new WaitForSeconds(remaining);
+        }
+        else 
+        {
+            // === STANDARD SINGLE-HIT LOGIC (Your existing code) ===
+            float currentWindUp = _currentExecutingAttack.windUpTime;
+            float currentDamageWindow = _currentExecutingAttack.damageDuration;
+            float currentTotalDuration = _currentExecutingAttack.totalDuration;
+
+            float timer = 0f;
+            while (timer < currentWindUp) 
+            {
+                if (_currentExecutingAttack.tracksPlayerDuringWindup) FaceTarget();
+                timer += Time.deltaTime;
+                yield return null;
+            }
+
+            canDealDamage = true;
+            yield return new WaitForSeconds(currentDamageWindow);
+            canDealDamage = false;
+
+            float remaining = currentTotalDuration - currentWindUp - currentDamageWindow;
+            if (remaining > 0) yield return new WaitForSeconds(remaining);
         }
 
-        canDealDamage = true;
-        yield return new WaitForSeconds(currentDamageWindow);
-        canDealDamage = false;
-
-        float remaining = currentTotalDuration - currentWindUp - currentDamageWindow;
-        if (remaining > 0) yield return new WaitForSeconds(remaining);
-
+        // --- POST-ATTACK DECISION ---
         if (Random.value < currentPersona.fear)
         {
-            _retreatType = 1; 
+            _retreatType = 1; // Reset
             SwitchState(AIState.Retreating);
         }
         else
