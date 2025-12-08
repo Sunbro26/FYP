@@ -98,6 +98,7 @@ public class SkeletonAI : MonoBehaviour
     private static readonly int AttackIndex = Animator.StringToHash("AttackIndex");
     private static readonly int TriggerAttack = Animator.StringToHash("TriggerAttack");
     private static readonly int AttackSpeedHash = Animator.StringToHash("AttackSpeed");
+    private static readonly int HitTrigger = Animator.StringToHash("Hit");
 
     void Start()
     {
@@ -413,5 +414,38 @@ public class SkeletonAI : MonoBehaviour
             Gizmos.color = Color.yellow;
             Gizmos.DrawWireSphere(activeBone.position, hitRadius);
         }
+    }
+
+    // --- NEW: Public Method called by PlayerAttack.cs ---
+    public void TakeHit()
+    {
+        // HYPER-ARMOR CHECK:
+        // If we are locked in an action (Attacking, Stunned, etc), DO NOT FLINCH.
+        // We still take HP damage (handled by CharacterStats), but animation continues.
+        if (_isActionLocked) return;
+
+        // If we are just walking/idling/maneuvering, we get interrupted.
+        StopAllCoroutines(); // Stop any movement/strategy logic
+        _agent.isStopped = true;
+        _isActionLocked = true; // Lock briefly for the flinch duration
+
+        // Trigger Animation
+        _animator.SetTrigger(HitTrigger);
+
+        // Start Recovery
+        StartCoroutine(RecoverFromHit());
+    }
+
+    private IEnumerator RecoverFromHit()
+    {
+        // Wait for length of flinch animation (approx 0.5s)
+        yield return new WaitForSeconds(0.5f);
+
+        // Reset
+        _isActionLocked = false;
+        if (_agent.isOnNavMesh) _agent.isStopped = false;
+
+        // Force a tactical retreat after getting hit
+        SwitchState(AIState.Retreating);
     }
 }

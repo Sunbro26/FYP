@@ -28,8 +28,6 @@ public class PlayerAttack : MonoBehaviour
     private Walk _walkScript;
     private PlayerDodge _dodgeScript;
     private CharacterStats _stats; 
-    
-    // --- EDIT 1: Add reference variable ---
     private PlayerBlock _blockScript; 
 
     private static readonly int AttackTrigger = Animator.StringToHash("Attack");
@@ -40,15 +38,12 @@ public class PlayerAttack : MonoBehaviour
         _walkScript = GetComponent<Walk>();
         _dodgeScript = GetComponent<PlayerDodge>();
         _stats = GetComponent<CharacterStats>();
-        
-        // --- EDIT 2: Get the component ---
         _blockScript = GetComponent<PlayerBlock>();
     }
 
     public void OnAttack(InputAction.CallbackContext context)
     {
-        // --- EDIT 3: Add the check (!IsBlocking) to the condition ---
-        // We check if _blockScript is null first to prevent errors if you remove the script later
+        // Condition: Started input, not attacking, not dodging, and NOT blocking
         if (context.started && !_isAttacking 
             && (_dodgeScript == null || !_dodgeScript.IsDodging()) 
             && (_blockScript == null || !_blockScript.IsBlocking)) 
@@ -90,8 +85,7 @@ public class PlayerAttack : MonoBehaviour
 
         foreach (Collider enemy in hitEnemies)
         {
-            // Debug.Log("We hit " + enemy.name); // Optional: Comment out to reduce console spam
-
+            // 1. Deal Damage
             CharacterStats enemyStats = enemy.GetComponent<CharacterStats>();
             if (enemyStats != null)
             {
@@ -101,6 +95,13 @@ public class PlayerAttack : MonoBehaviour
             {
                 CharacterStats parentStats = enemy.GetComponentInParent<CharacterStats>();
                 if (parentStats != null) parentStats.TakeDamage(damageAmount);
+            }
+
+            // 2. Trigger Flinch (This MUST be inside the loop)
+            SkeletonAI bossAI = enemy.GetComponentInParent<SkeletonAI>();
+            if (bossAI != null)
+            {
+                bossAI.TakeHit(); 
             }
         }
     }

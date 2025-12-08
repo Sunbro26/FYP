@@ -16,12 +16,17 @@ public class PlayerControl : MonoBehaviour
     private CharacterStats _stats;
     private PlayerBlock _blockScript;
     private PlayerDodge _dodgeScript;
+    private PlayerAttack _attackScript; 
+    private Animator _animator;
+    private static readonly int HitTrigger = Animator.StringToHash("Hit");
 
     void Start()
     {
         _stats = GetComponent<CharacterStats>();
         _blockScript = GetComponent<PlayerBlock>();
         _dodgeScript = GetComponent<PlayerDodge>();
+        _attackScript = GetComponent<PlayerAttack>();
+        _animator = GetComponentInChildren<Animator>();
     }
 
     private void OnTriggerEnter(Collider other)
@@ -106,6 +111,14 @@ public class PlayerControl : MonoBehaviour
                 if (_stats != null)
                 {
                     _stats.TakeDamage(10);
+                }
+                
+                // --- NEW FLINCH LOGIC ---
+                // Only play Flinch animation if we are NOT attacking.
+                // (We already know we aren't dodging or blocking from checks above)
+                if (_attackScript != null && !_attackScript.IsAttacking())
+                {
+                    if (_animator != null) _animator.SetTrigger(HitTrigger);
                 }
                 
                 enemyScript.canDealDamage = false;
