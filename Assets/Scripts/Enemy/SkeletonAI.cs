@@ -29,17 +29,23 @@ public class SkeletonAI : MonoBehaviour
     [System.Serializable]
     public class EnemyAttack
     {
-        public string name;             // e.g. "Dash Attack"
-        public int animationIndex;      // Matches Animator
-        public float optimalRange;      // e.g. 6.0 for Dash, 1.5 for Slash
-        public float rangeTolerance = 0.5f; // Precision needed
-        public float weight = 1.0f;     // Likelihood of picking
-        public bool requiresLineOfSight = true;
+        public string name;             
+        public int animationIndex;      
+        public float optimalRange;      
+        public float rangeTolerance = 0.5f; 
+        public float weight = 1.0f;     
+        
+        [Header("Timing")]
+        public float windUpTime;      
+        public float damageDuration;  
+        public float totalDuration;   
 
-        // --- NEW: Per-Attack Timing ---
-        public float windUpTime;      // How long before the hit happens?
-        public float damageDuration;  // How long is the hitbox active?
-        public float totalDuration;   // Total clip length
+        [Header("Quirks")]
+        [Tooltip("Uncheck this for 360 spins so the skeleton doesn't snap to player while spinning.")]
+        public bool tracksPlayerDuringWindup = true;
+
+        [Tooltip("Check this for Kicks to visualize the hitbox on the Foot instead of Sword.")]
+        public bool useFootHitbox = false;
     }   
 
     [Header("Configuration")]
@@ -48,34 +54,42 @@ public class SkeletonAI : MonoBehaviour
     public float circleSpeed = 2.5f;
 
     [Header("Attack Library")]
-    public List<EnemyAttack> availableAttacks; // POPULATE THIS IN INSPECTOR!
+    public List<EnemyAttack> availableAttacks; 
 
-    // --- NEW: Visual Debugging (Game View) ---
+    // --- Visual Debugging ---
     [Header("Visual Debugging")]
-    [Tooltip("Drag the MeshRenderer of the Sword here to see it flash Red when dangerous.")]
+    [Tooltip("Drag the MeshRenderer of the Sword here to see it flash Red.")]
     public Renderer swordMesh; 
-    [Tooltip("Check this to see the sword hitbox wireframe in the Scene view.")]
+    
+    [Tooltip("Drag the Sword Bone (Hand) here.")]
+    public Transform swordBone;
+    
+    [Tooltip("Drag the Foot Bone here (For Kicks).")]
+    public Transform footBone; 
+
+    [Tooltip("Check this to see the hitbox wireframe.")]
     public bool showDebugGizmos = true;
-    public Transform swordBone; 
     public float hitRadius = 0.5f;
 
-    private Color _originalSwordColor; // Stores the normal color of the sword
+    // --- Private Debug Variables ---
+    private Color _originalSwordColor; 
+    private Material _swordMaterialInstance; // Cache the material
+    private string _colorPropertyName; // To store the correct shader property name
 
     // --- State Variables ---
     private AIState _currentState;
     private NavMeshAgent _agent;
     private Animator _animator;
     private Transform _target;
-    private EnemyAttack _plannedAttack; // The GOAL
+    private EnemyAttack _plannedAttack; 
+    private EnemyAttack _currentExecutingAttack; 
     private float _decisionTimer;
     private bool _isActionLocked = false;
-    private int _retreatType = 0; // 0=Bait, 1=Reset
+    private int _retreatType = 0; 
 
-    // Circling vars
     private float _strafeDirection = 1f;
     private float _strafeTimer = 0f;
 
-    // Components
     public bool canDealDamage = false;
 
     // --- Hashes ---
@@ -92,29 +106,48 @@ public class SkeletonAI : MonoBehaviour
         GameObject p = GameObject.FindGameObjectWithTag("Player");
         if (p) _target = p.transform;
 
-        // Default setup
-        if(availableAttacks.Count == 0) Debug.LogError("Add Attacks to the List in Inspector!");
+        if (availableAttacks.Count == 0) Debug.LogError("Add Attacks to the List in Inspector!");
         
+        // --- NEW: SAFE SHADER SETUP ---
+        if (swordMesh != null) 
+        {
+            // Creates a temporary instance of the material so we don't change the asset file
+            _swordMaterialInstance = swordMesh.material;
+            
+            // Try to find the correct color property name
+            if (_swordMaterialInstance.HasProperty("_Color")) _colorPropertyName = "_Color";
+            else if (_swordMaterialInstance.HasProperty("_BaseColor")) _colorPropertyName = "_BaseColor";
+            else if (_swordMaterialInstance.HasProperty("_MainColor")) _colorPropertyName = "_MainColor";
+            
+            // If we found a valid property, save the original color
+            if (!string.IsNullOrEmpty(_colorPropertyName))
+            {
+                _originalSwordColor = _swordMaterialInstance.GetColor(_colorPropertyName);
+            }
+            else
+            {
+                Debug.LogWarning("Could not find a Color property on the sword shader. Red flash will be disabled.");
+            }
+        }
+
         SwitchState(AIState.Idle);
     }
 
     void Update()
     {
+        UpdateDebugVisuals(); 
+
         if (_target == null) return;
         if (_isActionLocked) return; 
 
         float distance = Vector3.Distance(transform.position, _target.position);
-
-        // 1. BRAIN: Decide Strategy
         DecideStrategy(distance);
-
-        // 2. BODY: Execute Movement based on Strategy
         ExecuteStateMovement(distance);
 
         if (_currentState != AIState.Stunned) FaceTarget();
     }
 
-    // --- THE GOAL-ORIENTED BRAIN ---
+    // --- THE BRAIN ---
     void DecideStrategy(float dist)
     {
         switch (_currentState)
@@ -124,48 +157,38 @@ public class SkeletonAI : MonoBehaviour
                 break;
 
             case AIState.Strategizing:
-                // We are circling, looking for an opening.
                 _decisionTimer += Time.deltaTime;
-                // 1. Interrupt: Too Close?
                 if (dist < 1.5f && Random.value < currentPersona.aggression)
                 {
-                    // Panic/Punish Attack (Force Basic Slash)
-                    _plannedAttack = availableAttacks[0]; // Assuming 0 is fast slash
+                    _plannedAttack = availableAttacks[0]; 
                     StartCoroutine(ExecuteAttackRoutine());
                     return;
                 }
 
-                // 2. Make a Plan
                 if (_decisionTimer > currentPersona.decisionFrequency)
                 {
                     _plannedAttack = ChooseNextAttackStrategy();
-                    Debug.Log($"Plan Formulated: Perform {_plannedAttack.name} at range {_plannedAttack.optimalRange}");
                     SwitchState(AIState.Maneuvering);
                 }
                 break;
 
             case AIState.Maneuvering:
-                // We have a plan. Are we in position?
                 if (IsPositionedForPlan(dist))
                 {
                     StartCoroutine(ExecuteAttackRoutine());
                 }
-                
-                // Failsafe: If maneuvering takes too long (stuck?), give up
                 _decisionTimer += Time.deltaTime;
                 if (_decisionTimer > 5.0f)
                 {
-                    Debug.Log("Plan Aborted: Took too long.");
                     _plannedAttack = null;
                     SwitchState(AIState.Strategizing);
                 }
                 break;
 
             case AIState.Retreating:
-                // Logic for Baits/Resets (Same as before)
                 if (_retreatType == 0) // Bait
                 {
-                    if (dist < 2.0f) { StartCoroutine(ExecuteAttackRoutine()); return; } // Punish
+                    if (dist < 2.0f) { StartCoroutine(ExecuteAttackRoutine()); return; }
                     if (dist > currentPersona.preferredCombatRange) SwitchState(AIState.Strategizing);
                 }
                 else if (_retreatType == 1) // Reset
@@ -176,41 +199,35 @@ public class SkeletonAI : MonoBehaviour
         }
     }
 
-    // --- THE BODY (Context-Aware Movement) ---
+    // --- THE BODY ---
     void ExecuteStateMovement(float dist)
     {
         switch (_currentState)
         {
             case AIState.Strategizing:
-                // Just circle/strafe menacingly
                 _agent.isStopped = true;
                 HandleCirclingMovement();
                 break;
 
             case AIState.Maneuvering:
-                // GOAL MOVEMENT: Move specifically to satisfy the plan
                 if (_plannedAttack == null) return;
-
                 _agent.isStopped = false;
+                
                 float targetRange = _plannedAttack.optimalRange;
 
-                // Logic: How do I get to optimal range?
                 if (dist > targetRange + _plannedAttack.rangeTolerance)
                 {
-                    // Too far? Chase.
                     _agent.SetDestination(_target.position);
                     UpdateAnim(0, 1); 
                 }
                 else if (dist < targetRange - _plannedAttack.rangeTolerance)
                 {
-                    // Too close? Back up (Tactical Retreat)
                     Vector3 fleeDir = (transform.position - _target.position).normalized;
                     _agent.SetDestination(transform.position + fleeDir * 2f);
                     UpdateAnim(0, -1);
                 }
                 else
                 {
-                    // In position! Stop.
                     _agent.isStopped = true;
                     UpdateAnim(0, 0);
                 }
@@ -225,59 +242,6 @@ public class SkeletonAI : MonoBehaviour
         }
     }
 
-    // --- HELPER LOGIC ---
-
-    EnemyAttack ChooseNextAttackStrategy()
-    {
-        // Weighted Random Choice
-        float totalWeight = 0;
-        foreach (var atk in availableAttacks) totalWeight += atk.weight;
-
-        float randomValue = Random.Range(0, totalWeight);
-        float cursor = 0;
-
-        foreach (var atk in availableAttacks)
-        {
-            cursor += atk.weight;
-            if (cursor >= randomValue) return atk;
-        }
-        return availableAttacks[0]; // Fallback
-    }
-
-    bool IsPositionedForPlan(float dist)
-    {
-        if (_plannedAttack == null) return false;
-        // Check if distance is within tolerance of optimal range
-        return Mathf.Abs(dist - _plannedAttack.optimalRange) <= _plannedAttack.rangeTolerance;
-    }
-
-    void HandleCirclingMovement()
-    {
-        // Tangent Circling Logic
-        Vector3 toPlayer = (_target.position - transform.position).normalized;
-        Vector3 tangent = Vector3.Cross(toPlayer, Vector3.up);
-
-        _strafeTimer += Time.deltaTime;
-        if (_strafeTimer > 3.0f)
-        {
-            _strafeDirection = (Random.value > 0.5f) ? 1f : -1f;
-            _strafeTimer = 0f;
-        }
-
-        Vector3 finalMove = tangent * _strafeDirection * circleSpeed * Time.deltaTime;
-        
-        // Drift Correction (Pull to preferred range)
-        float dist = Vector3.Distance(transform.position, _target.position);
-        float error = dist - currentPersona.preferredCombatRange;
-        Vector3 correction = toPlayer * error * 0.5f * Time.deltaTime; 
-
-        _agent.Move(finalMove + correction);
-        
-        // Smooth Anim
-        UpdateAnim(_strafeDirection, 0);
-    }
-
-    // --- ATTACK EXECUTION ---
     // --- ATTACK EXECUTION ---
     IEnumerator ExecuteAttackRoutine()
     {
@@ -285,46 +249,33 @@ public class SkeletonAI : MonoBehaviour
         _agent.isStopped = true;
         SwitchState(AIState.Attacking);
         
-        int animIndex = (_plannedAttack != null) ? _plannedAttack.animationIndex : 0;
-
-        _animator.SetInteger(AttackIndex, animIndex);
+        _currentExecutingAttack = _plannedAttack ?? availableAttacks[0];
+        
+        _animator.SetInteger(AttackIndex, _currentExecutingAttack.animationIndex);
         _animator.SetTrigger(TriggerAttack);
 
-        EnemyAttack attackData = _plannedAttack ?? availableAttacks[0];
+        float currentWindUp = _currentExecutingAttack.windUpTime;
+        float currentDamageWindow = _currentExecutingAttack.damageDuration;
+        float currentTotalDuration = _currentExecutingAttack.totalDuration;
 
-        float currentWindUp = attackData.windUpTime;
-        float currentDamageWindow = attackData.damageDuration;
-        float currentTotalDuration = attackData.totalDuration;
-
-        // 1. WIND UP PHASE (Tracking Player)
-        // We loop here so we can keep facing the target during the windup
         float timer = 0f;
         while (timer < currentWindUp) 
         {
-            FaceTarget();
+            if (_currentExecutingAttack.tracksPlayerDuringWindup) FaceTarget();
             timer += Time.deltaTime;
             yield return null;
         }
 
-        // 2. SWING PHASE (Damage ON)
-        // We stop facing the target so the player can dodge sideways
         canDealDamage = true;
         yield return new WaitForSeconds(currentDamageWindow);
         canDealDamage = false;
 
-        // 3. RECOVERY PHASE (The Fix)
-        // FIXED: We now use the 'current' variables, not the global ones.
         float remaining = currentTotalDuration - currentWindUp - currentDamageWindow;
-        
-        if (remaining > 0) 
-        {
-            yield return new WaitForSeconds(remaining);
-        }
+        if (remaining > 0) yield return new WaitForSeconds(remaining);
 
-        // --- POST-ATTACK DECISION ---
         if (Random.value < currentPersona.fear)
         {
-            _retreatType = 1; // Reset
+            _retreatType = 1; 
             SwitchState(AIState.Retreating);
         }
         else
@@ -333,9 +284,11 @@ public class SkeletonAI : MonoBehaviour
         }
 
         _plannedAttack = null; 
+        _currentExecutingAttack = null;
         _isActionLocked = false;
         _decisionTimer = 0;
     }
+
     // --- PARRY LOGIC ---
     public void GetParried()
     {
@@ -349,43 +302,85 @@ public class SkeletonAI : MonoBehaviour
 
     private IEnumerator ParryReboundRoutine()
     {
-        // 1. Reset any pending attack triggers so they don't fire immediately after
         _animator.ResetTrigger(TriggerAttack);
-
-        // 2. Reverse Animation
         _animator.SetFloat(AttackSpeedHash, -1.0f);
         yield return new WaitForSeconds(0.4f);
-
-        // 3. Freeze (Stun)
         _animator.SetFloat(AttackSpeedHash, 0f);
         yield return new WaitForSeconds(1.5f);
-
-        // 4. Restore Speed
         _animator.SetFloat(AttackSpeedHash, 1.0f);
-        
-        // --- THE FIX IS HERE ---
-        // Force the Animator to transition instantly to "Locomotion" (Walking).
-        // This cancels the rest of the sword swing.
         _animator.CrossFade("Locomotion", 0.2f);
-
-        // 5. Logic Switch
-        _retreatType = 1; // Force Reset behavior
+        _retreatType = 1; 
         SwitchState(AIState.Retreating); 
         _isActionLocked = false;
     }
 
     // --- HELPERS ---
+    void UpdateDebugVisuals()
+    {
+        // Safe check: If we never found a valid color property, do nothing.
+        if (_swordMaterialInstance == null || string.IsNullOrEmpty(_colorPropertyName)) return;
+
+        if (canDealDamage)
+        {
+            _swordMaterialInstance.SetColor(_colorPropertyName, Color.red);
+        }
+        else
+        {
+            _swordMaterialInstance.SetColor(_colorPropertyName, _originalSwordColor);
+        }
+    }
+
+    EnemyAttack ChooseNextAttackStrategy()
+    {
+        float totalWeight = 0;
+        foreach (var atk in availableAttacks) totalWeight += atk.weight;
+
+        float randomValue = Random.Range(0, totalWeight);
+        float cursor = 0;
+
+        foreach (var atk in availableAttacks)
+        {
+            cursor += atk.weight;
+            if (cursor >= randomValue) return atk;
+        }
+        return availableAttacks[0];
+    }
+
+    bool IsPositionedForPlan(float dist)
+    {
+        if (_plannedAttack == null) return false;
+        return Mathf.Abs(dist - _plannedAttack.optimalRange) <= _plannedAttack.rangeTolerance;
+    }
+
+    void HandleCirclingMovement()
+    {
+        Vector3 toPlayer = (_target.position - transform.position).normalized;
+        Vector3 tangent = Vector3.Cross(toPlayer, Vector3.up);
+
+        _strafeTimer += Time.deltaTime;
+        if (_strafeTimer > 3.0f)
+        {
+            _strafeDirection = (Random.value > 0.5f) ? 1f : -1f;
+            _strafeTimer = 0f;
+        }
+
+        Vector3 finalMove = tangent * _strafeDirection * circleSpeed * Time.deltaTime;
+        float dist = Vector3.Distance(transform.position, _target.position);
+        float error = dist - currentPersona.preferredCombatRange;
+        Vector3 correction = toPlayer * error * 0.5f * Time.deltaTime; 
+
+        _agent.Move(finalMove + correction);
+        UpdateAnim(_strafeDirection, 0);
+    }
+
     void SwitchState(AIState newState)
     {
         if (_currentState == newState) return;
         _currentState = newState;
-        _decisionTimer = 0; // Reset timer on state change
+        _decisionTimer = 0; 
         
-        // Init Retreat logic
         if (newState == AIState.Retreating)
-        {
             _retreatType = (Random.value > 0.5f) ? 0 : 1; 
-        }
     }
 
     void UpdateAnim(float x, float z)
@@ -401,20 +396,22 @@ public class SkeletonAI : MonoBehaviour
         if (dir != Vector3.zero) transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(dir), Time.deltaTime * 10f);
     }
 
-    // --- GIZMOS ---
     void OnDrawGizmos()
     {
-        if (!showDebugGizmos || swordBone == null) return;
+        if (!showDebugGizmos) return;
+        Transform activeBone = swordBone; 
+        if (_currentExecutingAttack != null && _currentExecutingAttack.useFootHitbox) activeBone = footBone;
+        if (activeBone == null) return;
 
         if (canDealDamage)
         {
             Gizmos.color = new Color(1, 0, 0, 0.5f); 
-            Gizmos.DrawSphere(swordBone.position, hitRadius);
+            Gizmos.DrawSphere(activeBone.position, hitRadius);
         }
         else
         {
             Gizmos.color = Color.yellow;
-            Gizmos.DrawWireSphere(swordBone.position, hitRadius);
+            Gizmos.DrawWireSphere(activeBone.position, hitRadius);
         }
     }
 }

@@ -2657,76 +2657,85 @@ MonoBehaviour:
     optimalRange: 1
     rangeTolerance: 0.5
     weight: 5
-    requiresLineOfSight: 0
     windUpTime: 0.75
-    damageDuration: 0.85
+    damageDuration: 1
     totalDuration: 2.1
+    tracksPlayerDuringWindup: 1
+    useFootHitbox: 0
   - name: Dash Attack
     animationIndex: 1
     optimalRange: 2.5
     rangeTolerance: 1
     weight: 5
-    requiresLineOfSight: 0
     windUpTime: 1
     damageDuration: 0.8
     totalDuration: 2.1
+    tracksPlayerDuringWindup: 1
+    useFootHitbox: 0
   - name: Attack Horizontal
     animationIndex: 2
-    optimalRange: 2.5
+    optimalRange: 1
     rangeTolerance: 0.5
     weight: 5
-    requiresLineOfSight: 0
-    windUpTime: 0.6
-    damageDuration: 0.8
+    windUpTime: 0.65
+    damageDuration: 1.2
     totalDuration: 2.2
+    tracksPlayerDuringWindup: 1
+    useFootHitbox: 0
   - name: Attack Backhand
     animationIndex: 3
     optimalRange: 1
     rangeTolerance: 0.5
     weight: 5
-    requiresLineOfSight: 0
     windUpTime: 0.6
-    damageDuration: 0.85
+    damageDuration: 1
     totalDuration: 3.1
+    tracksPlayerDuringWindup: 1
+    useFootHitbox: 0
   - name: Attack 360
     animationIndex: 4
     optimalRange: 1.5
     rangeTolerance: 0.5
     weight: 5
-    requiresLineOfSight: 0
     windUpTime: 0.75
-    damageDuration: 0.8
+    damageDuration: 1
     totalDuration: 2.45
+    tracksPlayerDuringWindup: 0
+    useFootHitbox: 0
   - name: Combo Attack
     animationIndex: 5
     optimalRange: 1
     rangeTolerance: 0.5
     weight: 5
-    requiresLineOfSight: 0
     windUpTime: 0.75
-    damageDuration: 2.25
+    damageDuration: 2.5
     totalDuration: 4.2
+    tracksPlayerDuringWindup: 1
+    useFootHitbox: 0
   - name: Run Jump Attack
     animationIndex: 6
     optimalRange: 3
     rangeTolerance: 1
     weight: 5
-    requiresLineOfSight: 0
     windUpTime: 1.5
-    damageDuration: 0.75
+    damageDuration: 0.85
     totalDuration: 3.6
+    tracksPlayerDuringWindup: 1
+    useFootHitbox: 0
   - name: Kick
     animationIndex: 7
     optimalRange: 1
     rangeTolerance: 0.5
     weight: 5
-    requiresLineOfSight: 0
     windUpTime: 0.5
     damageDuration: 0.4
     totalDuration: 1.85
+    tracksPlayerDuringWindup: 1
+    useFootHitbox: 1
   swordMesh: {fileID: 1909943965}
-  showDebugGizmos: 1
   swordBone: {fileID: 1505110766}
+  footBone: {fileID: 1562482256}
+  showDebugGizmos: 0
   hitRadius: 0.5
   canDealDamage: 0
 --- !u!136 &385033933
@@ -9422,6 +9431,10 @@ PrefabInstance:
       propertyPath: m_Layer
       value: 6
       objectReference: {fileID: 0}
+    - target: {fileID: 3708339280603157149, guid: 4921fcd859a7b0c45848c5f54d6077ad, type: 3}
+      propertyPath: m_TagString
+      value: sword
+      objectReference: {fileID: 0}
     - target: {fileID: 3712586051649948414, guid: 4921fcd859a7b0c45848c5f54d6077ad, type: 3}
       propertyPath: m_Layer
       value: 6
@@ -9782,6 +9795,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 8210207690257594047, guid: 4921fcd859a7b0c45848c5f54d6077ad, type: 3}
       insertIndex: -1
       addedObject: {fileID: 385033937}
+    - targetCorrespondingSourceObject: {fileID: 3708339280603157149, guid: 4921fcd859a7b0c45848c5f54d6077ad, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1562482257}
   m_SourcePrefab: {fileID: 100100000, guid: 4921fcd859a7b0c45848c5f54d6077ad, type: 3}
 --- !u!1001 &1465231287
 PrefabInstance:
@@ -10389,6 +10405,37 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 2966750739439028892, guid: b62637568d07eb141b948ab45ea8c3d4, type: 3}
   m_PrefabInstance: {fileID: 1533123523}
   m_PrefabAsset: {fileID: 0}
+--- !u!1 &1562482255 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 3708339280603157149, guid: 4921fcd859a7b0c45848c5f54d6077ad, type: 3}
+  m_PrefabInstance: {fileID: 1451714782}
+  m_PrefabAsset: {fileID: 0}
+--- !u!4 &1562482256 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 1233124535983642558, guid: 4921fcd859a7b0c45848c5f54d6077ad, type: 3}
+  m_PrefabInstance: {fileID: 1451714782}
+  m_PrefabAsset: {fileID: 0}
+--- !u!135 &1562482257
+SphereCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1562482255}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 1
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Radius: 0.5
+  m_Center: {x: 0, y: 0, z: 0}
 --- !u!1001 &1567457536
 PrefabInstance:
   m_ObjectHideFlags: 0
