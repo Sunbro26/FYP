@@ -2646,11 +2646,24 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::SkeletonAI
   currentPersona:
     aggression: 0.9
+    fear: 0.2
+    decisionFrequency: 2
     preferredCombatRange: 1.5
   sensorRadius: 15
   circleSpeed: 1.25
-  retreatDistance: 3
-  stateCommitmentTime: 3
+  availableAttacks:
+  - name: Basic Slash
+    animationIndex: 0
+    optimalRange: 1
+    rangeTolerance: 0.5
+    weight: 5
+    requiresLineOfSight: 0
+  - name: Dash Attack
+    animationIndex: 1
+    optimalRange: 2.5
+    rangeTolerance: 1
+    weight: 5
+    requiresLineOfSight: 0
   damageStartDelay: 0.3
   damageWindowDuration: 0.7
   attackAnimDuration: 1.2
