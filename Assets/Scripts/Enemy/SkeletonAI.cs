@@ -343,13 +343,27 @@ public class SkeletonAI : MonoBehaviour
 
     private IEnumerator ParryReboundRoutine()
     {
+        // 1. Reset any pending attack triggers so they don't fire immediately after
+        _animator.ResetTrigger(TriggerAttack);
+
+        // 2. Reverse Animation
         _animator.SetFloat(AttackSpeedHash, -1.0f);
         yield return new WaitForSeconds(0.4f);
+
+        // 3. Freeze (Stun)
         _animator.SetFloat(AttackSpeedHash, 0f);
         yield return new WaitForSeconds(1.5f);
+
+        // 4. Restore Speed
         _animator.SetFloat(AttackSpeedHash, 1.0f);
         
-        _retreatType = 1; // Always reset after stun
+        // --- THE FIX IS HERE ---
+        // Force the Animator to transition instantly to "Locomotion" (Walking).
+        // This cancels the rest of the sword swing.
+        _animator.CrossFade("Locomotion", 0.2f);
+
+        // 5. Logic Switch
+        _retreatType = 1; // Force Reset behavior
         SwitchState(AIState.Retreating); 
         _isActionLocked = false;
     }
