@@ -25,9 +25,8 @@ public class PlayerBlock : MonoBehaviour
         // 1. Button Pressed (Start Blocking)
         if (context.performed)
         {
-            // Don't allow blocking if we are currently rolling or attacking
-            // (You can remove the IsAttacking check if you want to allow "Animation Canceling" into a block)
-            if (_dodgeScript.IsDodging()) return;
+            // Check Dodging AND Attacking
+            if (_dodgeScript.IsDodging() || _attackScript.IsAttacking()) return;
 
             IsBlocking = true;
             _animator.SetBool(BlockingParam, true);

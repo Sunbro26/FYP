@@ -17,7 +17,7 @@ public class SkeletonAI : MonoBehaviour
         Stunned         // Parried
     }
 
-[System.Serializable]
+    [System.Serializable]
     public class AIPersona
     {
         [Range(0, 1)] public float aggression = 0.7f; 
@@ -50,6 +50,17 @@ public class SkeletonAI : MonoBehaviour
     [Header("Attack Library")]
     public List<EnemyAttack> availableAttacks; // POPULATE THIS IN INSPECTOR!
 
+    // --- NEW: Visual Debugging (Game View) ---
+    [Header("Visual Debugging")]
+    [Tooltip("Drag the MeshRenderer of the Sword here to see it flash Red when dangerous.")]
+    public Renderer swordMesh; 
+    [Tooltip("Check this to see the sword hitbox wireframe in the Scene view.")]
+    public bool showDebugGizmos = true;
+    public Transform swordBone; 
+    public float hitRadius = 0.5f;
+
+    private Color _originalSwordColor; // Stores the normal color of the sword
+
     // --- State Variables ---
     private AIState _currentState;
     private NavMeshAgent _agent;
@@ -59,10 +70,6 @@ public class SkeletonAI : MonoBehaviour
     private float _decisionTimer;
     private bool _isActionLocked = false;
     private int _retreatType = 0; // 0=Bait, 1=Reset
-    [Header("Combat Timing")]
-    public float damageStartDelay = 0.4f;
-    public float damageWindowDuration = 0.2f;
-    public float attackAnimDuration = 1.2f;
 
     // Circling vars
     private float _strafeDirection = 1f;
@@ -283,12 +290,11 @@ public class SkeletonAI : MonoBehaviour
         _animator.SetInteger(AttackIndex, animIndex);
         _animator.SetTrigger(TriggerAttack);
 
-        // --- DEFINE TIMING VALUES ---
-        // Safety: If _plannedAttack is null (fallback), use global defaults. 
-        // Otherwise, use the specific data from the Inspector list.
-        float currentWindUp = (_plannedAttack != null) ? _plannedAttack.windUpTime : damageStartDelay;
-        float currentDamageWindow = (_plannedAttack != null) ? _plannedAttack.damageDuration : damageWindowDuration;
-        float currentTotalDuration = (_plannedAttack != null) ? _plannedAttack.totalDuration : attackAnimDuration;
+        EnemyAttack attackData = _plannedAttack ?? availableAttacks[0];
+
+        float currentWindUp = attackData.windUpTime;
+        float currentDamageWindow = attackData.damageDuration;
+        float currentTotalDuration = attackData.totalDuration;
 
         // 1. WIND UP PHASE (Tracking Player)
         // We loop here so we can keep facing the target during the windup
@@ -393,5 +399,22 @@ public class SkeletonAI : MonoBehaviour
         Vector3 dir = (_target.position - transform.position).normalized;
         dir.y = 0;
         if (dir != Vector3.zero) transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(dir), Time.deltaTime * 10f);
+    }
+
+    // --- GIZMOS ---
+    void OnDrawGizmos()
+    {
+        if (!showDebugGizmos || swordBone == null) return;
+
+        if (canDealDamage)
+        {
+            Gizmos.color = new Color(1, 0, 0, 0.5f); 
+            Gizmos.DrawSphere(swordBone.position, hitRadius);
+        }
+        else
+        {
+            Gizmos.color = Color.yellow;
+            Gizmos.DrawWireSphere(swordBone.position, hitRadius);
+        }
     }
 }

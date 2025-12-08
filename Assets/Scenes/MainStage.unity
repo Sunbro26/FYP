@@ -2658,75 +2658,76 @@ MonoBehaviour:
     rangeTolerance: 0.5
     weight: 5
     requiresLineOfSight: 0
-    windUpTime: 0.35
-    damageDuration: 1.4
-    totalDuration: 2
+    windUpTime: 0.75
+    damageDuration: 0.85
+    totalDuration: 2.1
   - name: Dash Attack
     animationIndex: 1
     optimalRange: 2.5
     rangeTolerance: 1
     weight: 5
     requiresLineOfSight: 0
-    windUpTime: 0.9
-    damageDuration: 1.1
-    totalDuration: 2
+    windUpTime: 1
+    damageDuration: 0.8
+    totalDuration: 2.1
   - name: Attack Horizontal
     animationIndex: 2
     optimalRange: 2.5
     rangeTolerance: 0.5
     weight: 5
     requiresLineOfSight: 0
-    windUpTime: 0.9
-    damageDuration: 1.1
-    totalDuration: 2
+    windUpTime: 0.6
+    damageDuration: 0.8
+    totalDuration: 2.2
   - name: Attack Backhand
     animationIndex: 3
     optimalRange: 1
     rangeTolerance: 0.5
     weight: 5
     requiresLineOfSight: 0
-    windUpTime: 0.9
-    damageDuration: 1.1
-    totalDuration: 2
+    windUpTime: 0.6
+    damageDuration: 0.85
+    totalDuration: 3.1
   - name: Attack 360
     animationIndex: 4
     optimalRange: 1.5
     rangeTolerance: 0.5
     weight: 5
     requiresLineOfSight: 0
-    windUpTime: 0.9
-    damageDuration: 1.1
-    totalDuration: 2
+    windUpTime: 0.75
+    damageDuration: 0.8
+    totalDuration: 2.45
   - name: Combo Attack
     animationIndex: 5
     optimalRange: 1
     rangeTolerance: 0.5
     weight: 5
     requiresLineOfSight: 0
-    windUpTime: 0.9
-    damageDuration: 1.1
-    totalDuration: 2
+    windUpTime: 0.75
+    damageDuration: 2.25
+    totalDuration: 4.2
   - name: Run Jump Attack
     animationIndex: 6
     optimalRange: 3
     rangeTolerance: 1
     weight: 5
     requiresLineOfSight: 0
-    windUpTime: 0.9
-    damageDuration: 1.1
-    totalDuration: 2
+    windUpTime: 1.5
+    damageDuration: 0.75
+    totalDuration: 3.6
   - name: Kick
     animationIndex: 7
     optimalRange: 1
     rangeTolerance: 0.5
     weight: 5
     requiresLineOfSight: 0
-    windUpTime: 0.9
-    damageDuration: 1.1
-    totalDuration: 2
-  damageStartDelay: 0.3
-  damageWindowDuration: 0.7
-  attackAnimDuration: 1.2
+    windUpTime: 0.5
+    damageDuration: 0.4
+    totalDuration: 1.85
+  swordMesh: {fileID: 1909943965}
+  showDebugGizmos: 1
+  swordBone: {fileID: 1505110766}
+  hitRadius: 0.5
   canDealDamage: 0
 --- !u!136 &385033933
 CapsuleCollider:
@@ -10089,6 +10090,11 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 1439603208813202615, guid: 66d0615cc71cd48408b75ff3f99c97af, type: 3}
   m_PrefabInstance: {fileID: 1497632521}
   m_PrefabAsset: {fileID: 0}
+--- !u!4 &1505110766 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 959789781078721885, guid: 4921fcd859a7b0c45848c5f54d6077ad, type: 3}
+  m_PrefabInstance: {fileID: 1451714782}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1001 &1512893832
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -11851,6 +11857,11 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 0.4, y: 0.75, z: 0.4}
   m_Center: {x: 0, y: -0.43, z: 0}
+--- !u!23 &1909943965 stripped
+MeshRenderer:
+  m_CorrespondingSourceObject: {fileID: 4489677676254663409, guid: 39ec6af3eb8c70848b3da75dbf39628f, type: 3}
+  m_PrefabInstance: {fileID: 1093313443}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1931043115
 GameObject:
   m_ObjectHideFlags: 0
