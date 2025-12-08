@@ -29,7 +29,7 @@ public class PlayerControl : MonoBehaviour
         _animator = GetComponentInChildren<Animator>();
     }
 
-    private void OnTriggerEnter(Collider other)
+private void OnTriggerEnter(Collider other)
     {
         if (other.gameObject.CompareTag("sword"))
         {
@@ -37,36 +37,42 @@ public class PlayerControl : MonoBehaviour
             SkeletonAI enemyScript = other.GetComponentInParent<SkeletonAI>();
             if (enemyScript == null || enemyScript.canDealDamage == false) return;
 
+            // --- NEW: GET ATTACK DATA ---
+            // We fetch the stats of the specific attack being used right now
+            var incomingAttack = enemyScript.GetCurrentAttack();
+            
+            // Set defaults just in case something goes wrong
+            int incomingDamage = 10;
+            float incomingStaminaCost = 10f;
+
+            if (incomingAttack != null)
+            {
+                incomingDamage = incomingAttack.damage;
+                incomingStaminaCost = incomingAttack.blockStaminaCost;
+            }
+            // -----------------------------
+
             // 2. Check for I-Frames (Dodge)
             PlayerDodge dodgeScript = GetComponent<PlayerDodge>();
             if (dodgeScript != null && dodgeScript.IsInvincible) return;
 
-            // --- 3. NEW PARRY CHECK ---
+            // 3. PARRY CHECK
             PlayerParry parryScript = GetComponent<PlayerParry>();
             if (parryScript != null && parryScript.IsParryWindowActive)
             {
-                // Check Direction (Can usually only parry attacks from the front)
                 Vector3 directionToEnemy = (enemyScript.transform.position - transform.position).normalized;
                 float angle = Vector3.Angle(transform.forward, directionToEnemy);
 
-                if (angle <= 60f) // 60 degree cone for parrying
+                if (angle <= 60f) 
                 {
                     Debug.Log("SUCCESSFUL PARRY!");
-                    
-                    // Trigger the enemy rebound
                     enemyScript.GetParried();
-
-                    // Spawn a spark effect (reuse the block sparks)
-                    if (blockSparksPrefab != null)
-                    {
-                        Instantiate(blockSparksPrefab, blockEffectSpawnPoint.position, Quaternion.identity);
-                    }
-                    
-                    return; // Exit completely
+                    if (blockSparksPrefab != null) Instantiate(blockSparksPrefab, blockEffectSpawnPoint.position, Quaternion.identity);
+                    return; 
                 }
             }
 
-            // --- 4. DIRECTIONAL BLOCK CHECK ---
+            // 4. BLOCK CHECK
             bool isBlockingSuccessfully = false;
 
             if (_blockScript != null && _blockScript.IsBlocking)
@@ -74,18 +80,17 @@ public class PlayerControl : MonoBehaviour
                 Vector3 directionToEnemy = (enemyScript.transform.position - transform.position).normalized;
                 float angle = Vector3.Angle(transform.forward, directionToEnemy);
 
-                // Check angle AND if we have enough stamina to block
                 if (angle <= blockAngle / 2)
                 {
-                    // Try to consume stamina for the block
-                    if (_stats.UseStamina(staminaCostPerBlock))
+                    // --- CHANGED: Use incomingStaminaCost instead of local variable ---
+                    if (_stats.UseStamina(incomingStaminaCost))
                     {
                         isBlockingSuccessfully = true;
                     }
                     else
                     {
-                        Debug.Log("Not enough stamina to block!");
-                        // Guard break logic could go here
+                        Debug.Log("Guard Broken! Not enough stamina.");
+                        // Optional: Trigger a stagger animation here
                     }
                 }
             }
@@ -93,7 +98,6 @@ public class PlayerControl : MonoBehaviour
             // 5. Outcome Logic
             if (isBlockingSuccessfully)
             {
-                // Spawn Particles
                 if (blockSparksPrefab != null && blockEffectSpawnPoint != null)
                 {
                     Vector3 directionToEnemy = (enemyScript.transform.position - transform.position).normalized;
@@ -101,24 +105,22 @@ public class PlayerControl : MonoBehaviour
                     GameObject sparks = Instantiate(blockSparksPrefab, blockEffectSpawnPoint.position, sparkRotation);
                     Destroy(sparks, 1.0f);
                 }
-
                 enemyScript.canDealDamage = false; 
                 return; 
             }
             else
             {
-                // TAKE DAMAGE via CharacterStats
+                // --- CHANGED: Use incomingDamage instead of hardcoded 10 ---
                 if (_stats != null)
                 {
-                    _stats.TakeDamage(10);
+                    _stats.TakeDamage(incomingDamage);
                 }
                 
-                // --- NEW FLINCH LOGIC ---
-                // Only play Flinch animation if we are NOT attacking.
-                // (We already know we aren't dodging or blocking from checks above)
+                // FLINCH LOGIC
                 if (_attackScript != null && !_attackScript.IsAttacking())
                 {
-                    if (_animator != null) _animator.SetTrigger(HitTrigger);
+                    Animator anim = GetComponentInChildren<Animator>();
+                    if (anim != null) anim.SetTrigger("Hit"); // Make sure "Hit" is in your Player Animator
                 }
                 
                 enemyScript.canDealDamage = false;

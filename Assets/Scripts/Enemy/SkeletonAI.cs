@@ -46,6 +46,12 @@ public class SkeletonAI : MonoBehaviour
 
         [Tooltip("Check this for Kicks to visualize the hitbox on the Foot instead of Sword.")]
         public bool useFootHitbox = false;
+        // --- NEW: DAMAGE STATS ---
+        [Header("Damage Stats")]
+        [Tooltip("How much HP this attack takes if it hits.")]
+        public int damage = 15;
+        [Tooltip("How much Player Stamina this drains if Blocked.")]
+        public float blockStaminaCost = 20f;
     }   
 
     [Header("Configuration")]
@@ -387,6 +393,13 @@ public class SkeletonAI : MonoBehaviour
         {
             _swordMaterialInstance.SetColor(_colorPropertyName, _originalSwordColor);
         }
+    }
+
+    // --- NEW: Helper for PlayerControl to get stats ---
+    public EnemyAttack GetCurrentAttack()
+    {
+        // Return the attack currently being executed (or the planned one)
+        return _currentExecutingAttack;
     }
 
     EnemyAttack ChooseNextAttackStrategy()

@@ -2662,6 +2662,8 @@ MonoBehaviour:
     totalDuration: 2.1
     tracksPlayerDuringWindup: 1
     useFootHitbox: 0
+    damage: 10
+    blockStaminaCost: 15
   - name: Dash Attack
     animationIndex: 1
     optimalRange: 2.5
@@ -2672,6 +2674,8 @@ MonoBehaviour:
     totalDuration: 2.1
     tracksPlayerDuringWindup: 1
     useFootHitbox: 0
+    damage: 20
+    blockStaminaCost: 20
   - name: Attack Horizontal
     animationIndex: 2
     optimalRange: 1
@@ -2682,6 +2686,8 @@ MonoBehaviour:
     totalDuration: 2.2
     tracksPlayerDuringWindup: 1
     useFootHitbox: 0
+    damage: 15
+    blockStaminaCost: 15
   - name: Attack Backhand
     animationIndex: 3
     optimalRange: 1
@@ -2692,6 +2698,8 @@ MonoBehaviour:
     totalDuration: 3.1
     tracksPlayerDuringWindup: 1
     useFootHitbox: 0
+    damage: 15
+    blockStaminaCost: 20
   - name: Attack 360
     animationIndex: 4
     optimalRange: 1.5
@@ -2702,6 +2710,8 @@ MonoBehaviour:
     totalDuration: 2.45
     tracksPlayerDuringWindup: 0
     useFootHitbox: 0
+    damage: 25
+    blockStaminaCost: 30
   - name: Combo Attack
     animationIndex: 5
     optimalRange: 1.5
@@ -2712,6 +2722,8 @@ MonoBehaviour:
     totalDuration: 4.16
     tracksPlayerDuringWindup: 1
     useFootHitbox: 0
+    damage: 10
+    blockStaminaCost: 15
   - name: Run Jump Attack
     animationIndex: 6
     optimalRange: 3
@@ -2722,6 +2734,8 @@ MonoBehaviour:
     totalDuration: 3.6
     tracksPlayerDuringWindup: 1
     useFootHitbox: 0
+    damage: 25
+    blockStaminaCost: 30
   - name: Kick
     animationIndex: 7
     optimalRange: 1
@@ -2732,6 +2746,8 @@ MonoBehaviour:
     totalDuration: 1.85
     tracksPlayerDuringWindup: 1
     useFootHitbox: 1
+    damage: 5
+    blockStaminaCost: 50
   swordMesh: {fileID: 1909943965}
   swordBone: {fileID: 1505110766}
   footBone: {fileID: 1562482256}
