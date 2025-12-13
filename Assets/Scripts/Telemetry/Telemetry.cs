@@ -3,71 +3,87 @@ using System.Collections.Generic;
 using System.Linq;
 using System;
 
+/// <summary>
+/// Dual-purpose Telemetry system.
+/// 1. Logs periodic summary reports to the console for demos.
+/// 2. Provides high-frequency, real-time public properties for an ML-Agent to use as observations.
+/// </summary>
 public class Telemetry : MonoBehaviour
 {
-    [Header("Telemetry Settings")]
-    [Tooltip("List of event names (as strings) that should count towards Actions Per Minute (APM).")]
-    [SerializeField] private List<string> apmEventNames = new List<string>();
+    // --- SECTION 1: Original Configuration for Console Logging ---
 
-    [Tooltip("How often (in seconds) to log the current APM and positional data.")]
+    [Header("Console Logging Settings")]
+    [Tooltip("List of event names (as strings) that should count towards Actions Per Minute (APM).")]
+    [SerializeField] private List<string> apmEventNames = new List<string> { "PlayerAttack", "PlayerDodge" };
+
+    [Tooltip("How often (in seconds) to log the summary report to the console.")]
     [SerializeField] private float logInterval = 10f;
 
-    [Header("Positional Tracking")]
+    [Header("Object References")]
     [Tooltip("The Transform of the player character.")]
     [SerializeField] private Transform playerTransform;
-    [Tooltip("The Transform of the enemy agent to track relative distance. Can be null if only tracking player position.")]
+    [Tooltip("The Transform of the enemy agent to track relative distance.")]
     [SerializeField] private Transform enemyTransform;
 
-    // Dictionary to store timestamps for each tracked APM event
-    private Dictionary<string, List<float>> _apmEventTimestamps = new Dictionary<string, List<float>>();
-    private float _timer;
+    // --- SECTION 2: Public Properties for ML-Agent ---
+    // These are updated every frame for the agent's observation vector.
 
-    // Positional tracking variables
-    private Vector3 _lastPlayerPosition;
-    private Vector3 _lastEnemyPosition; // To calculate enemy movement as well, though not explicitly asked for here
-    private float _lastDistanceToEnemy; // To track change in distance to enemy
+    [Header("Real-time Agent Data (Read-Only)")]
+    public float TotalAPM_Agent { get; private set; }
+    public float PlayerAttackAPM_Agent { get; private set; }
+    public float PlayerDistanceMoved_Agent { get; private set; }
+    public float PlayerEnemyDistance_Agent { get; private set; }
+    public float PlayerEnemyDistanceChange_Agent { get; private set; } // Positive = getting further, Negative = getting closer
+
+    // --- SECTION 3: Internal State Management ---
+
+    // State for Console Logging (Low Frequency)
+    private float _logTimer;
+    private Vector3 _lastPlayerPosition_ForLog;
+    private float _lastDistanceToEnemy_ForLog;
+
+    // State for Agent Data (High Frequency)
+    private Dictionary<string, List<float>> _apmEventTimestamps = new Dictionary<string, List<float>>();
+    private Vector3 _lastPlayerPosition_ForAgent;
+    private float _lastDistanceToEnemy_ForAgent;
+
+    // --- SECTION 4: Unity Lifecycle Methods ---
 
     void OnEnable()
     {
-        // Subscribe to PlayerAttack event
+        // Subscribe to player action events. Make sure these events exist in your project.
+        // Example: public static event Action OnPlayerAttack;
         PlayerAttack.OnPlayerAttack += OnPlayerAttackHandler;
-        // PlayerDodge.OnPlayerDodge += OnPlayerDodgeHandler; // Uncomment if PlayerDodge event exists
+        // If you have a dodge event, uncomment the following line:
+        // PlayerDodge.OnPlayerDodge += OnPlayerDodgeHandler;
     }
 
     void OnDisable()
     {
-        // Unsubscribe from events
         PlayerAttack.OnPlayerAttack -= OnPlayerAttackHandler;
-        // PlayerDodge.OnPlayerDodge -= OnPlayerDodgeHandler; // Uncomment if PlayerDodge event exists
+        // PlayerDodge.OnPlayerDodge -= OnPlayerDodgeHandler;
     }
 
     void Start()
     {
-        if (playerTransform == null)
+        // --- Initialization for both systems ---
+        if (playerTransform == null || enemyTransform == null)
         {
-            Debug.LogError("Telemetry: Player Transform not assigned. Positional tracking for player will be disabled.", this);
-        }
-        else
-        {
-            _lastPlayerPosition = playerTransform.position;
-        }
-
-        if (enemyTransform == null)
-        {
-            Debug.LogWarning("Telemetry: Enemy Transform not assigned. Positional tracking relative to enemy will be disabled.", this);
-        }
-        else
-        {
-            _lastEnemyPosition = enemyTransform.position;
-            _lastDistanceToEnemy = Vector3.Distance(playerTransform.position, enemyTransform.position);
+            Debug.LogError("Telemetry: Player and/or Enemy Transform not assigned. This script will not function correctly.", this);
+            this.enabled = false; // Disable script if references are missing
+            return;
         }
 
-        if (apmEventNames == null || apmEventNames.Count == 0)
-        {
-            Debug.LogWarning("Telemetry: No APM event names specified. APM tracking will be limited.", this);
-        }
+        // Initialize logging state
+        _lastPlayerPosition_ForLog = playerTransform.position;
+        _lastDistanceToEnemy_ForLog = Vector3.Distance(playerTransform.position, enemyTransform.position);
+        _logTimer = logInterval;
 
-        // Initialize the dictionary for each event listed in apmEventNames
+        // Initialize agent state
+        _lastPlayerPosition_ForAgent = playerTransform.position;
+        _lastDistanceToEnemy_ForAgent = Vector3.Distance(playerTransform.position, enemyTransform.position);
+
+        // Initialize dictionaries for APM tracking
         foreach (string eventName in apmEventNames)
         {
             if (!_apmEventTimestamps.ContainsKey(eventName))
@@ -75,20 +91,93 @@ public class Telemetry : MonoBehaviour
                 _apmEventTimestamps.Add(eventName, new List<float>());
             }
         }
-
-        _timer = logInterval; // Start logging immediately on first interval
     }
 
     void Update()
     {
-        _timer -= Time.deltaTime;
-        if (_timer <= 0f)
+        // --- Part A: Update High-Frequency Agent Data (Every Frame) ---
+        UpdateAgentMetrics();
+
+        // --- Part B: Handle Low-Frequency Console Logging ---
+        _logTimer -= Time.deltaTime;
+        if (_logTimer <= 0f)
         {
-            LogActionsPerMinute();
-            LogPositionalChanges(); // NEW: Log positional changes
-            _timer = logInterval;
+            LogSummaryReport(); // Fire the periodic report
+            _logTimer = logInterval;
         }
     }
+
+    // --- SECTION 5: Core Logic ---
+
+    private void UpdateAgentMetrics()
+    {
+        if (playerTransform == null || enemyTransform == null) return;
+
+        // 1. Calculate all APM values
+        float oneMinuteAgo = Time.time - 60f;
+        int totalActions = 0;
+
+        foreach (var entry in _apmEventTimestamps)
+        {
+            // Remove old timestamps to keep the list clean
+            entry.Value.RemoveAll(t => t < oneMinuteAgo);
+            int currentEventAPM = entry.Value.Count;
+
+            // Update specific agent properties
+            if (entry.Key == "PlayerAttack")
+            {
+                PlayerAttackAPM_Agent = currentEventAPM;
+            }
+            // Add other specific APM metrics here if needed (e.g., PlayerDodge)
+
+            totalActions += currentEventAPM;
+        }
+        TotalAPM_Agent = totalActions;
+
+
+        // 2. Calculate positional metrics
+        Vector3 currentPlayerPos = playerTransform.position;
+        PlayerDistanceMoved_Agent = Vector3.Distance(_lastPlayerPosition_ForAgent, currentPlayerPos);
+
+        float currentDistanceToEnemy = Vector3.Distance(currentPlayerPos, enemyTransform.position);
+        PlayerEnemyDistance_Agent = currentDistanceToEnemy;
+        PlayerEnemyDistanceChange_Agent = currentDistanceToEnemy - _lastDistanceToEnemy_ForAgent;
+
+        // 3. Update "last known" values for the next frame
+        _lastPlayerPosition_ForAgent = currentPlayerPos;
+        _lastDistanceToEnemy_ForAgent = currentDistanceToEnemy;
+    }
+
+
+    private void LogSummaryReport()
+    {
+        Debug.Log($"--- Telemetry Report (Time: {Time.time:F2}s) ---");
+
+        // Log APM from the live agent data
+        Debug.Log($"Total Player APM (live): {TotalAPM_Agent}");
+        foreach (string eventName in apmEventNames)
+        {
+            if (_apmEventTimestamps.ContainsKey(eventName))
+            {
+                 Debug.Log($"- {eventName} APM (live): {_apmEventTimestamps[eventName].Count}");
+            }
+        }
+
+        // Log positional changes over the log interval
+        float playerDistMoved = Vector3.Distance(_lastPlayerPosition_ForLog, playerTransform.position);
+        Debug.Log($"Player moved {playerDistMoved:F2} units in the last {logInterval:F2}s.");
+        _lastPlayerPosition_ForLog = playerTransform.position;
+
+        float currentDist = Vector3.Distance(playerTransform.position, enemyTransform.position);
+        float distChange = currentDist - _lastDistanceToEnemy_ForLog;
+        string direction = distChange < 0 ? "closer to" : (distChange > 0 ? "further from" : "same distance from");
+        Debug.Log($"Player is now {Mathf.Abs(distChange):F2} units {direction} the enemy.");
+        _lastDistanceToEnemy_ForLog = currentDist;
+
+        Debug.Log("------------------------------------");
+    }
+
+    // --- SECTION 6: Event Handlers ---
 
     private void AddApmEventTimestamp(string eventName)
     {
@@ -96,78 +185,15 @@ public class Telemetry : MonoBehaviour
         {
             _apmEventTimestamps[eventName].Add(Time.time);
         }
-        else
-        {
-            Debug.LogWarning($"Telemetry: Event '{eventName}' fired but not initially configured for APM. Adding it to tracking.", this);
-            _apmEventTimestamps.Add(eventName, new List<float> { Time.time });
-        }
     }
 
     private void OnPlayerAttackHandler()
     {
         AddApmEventTimestamp("PlayerAttack");
-        // Debug.Log("Telemetry: PlayerAttack recorded.");
     }
 
-    // private void OnPlayerDodgeHandler()
-    // {
-    //     AddApmEventTimestamp("PlayerDodge");
-    //     // Debug.Log("Telemetry: PlayerDodge recorded.");
-    // }
-
-    private void LogActionsPerMinute()
+    private void OnPlayerDodgeHandler()
     {
-        float currentTime = Time.time;
-        float oneMinuteAgo = currentTime - 60f;
-        int totalAPMActions = 0;
-
-        Debug.Log($"--- Telemetry Report ({currentTime:F2}s) ---");
-
-        if (_apmEventTimestamps.Count == 0)
-        {
-            Debug.Log("No APM events configured or tracked yet.");
-        }
-        else
-        {
-            foreach (var entry in _apmEventTimestamps)
-            {
-                string eventName = entry.Key;
-                List<float> timestamps = entry.Value;
-
-                timestamps.RemoveAll(t => t < oneMinuteAgo);
-                int apmCount = timestamps.Count;
-                totalAPMActions += apmCount;
-
-                Debug.Log($"- {eventName} APM: {apmCount}");
-            }
-            Debug.Log($"Total Actions Per Minute (APM): {totalAPMActions}");
-        }
-    }
-
-    // NEW FUNCTION: Log player and relative positional changes
-    private void LogPositionalChanges()
-    {
-        // Player Position Change
-        if (playerTransform != null)
-        {
-            float playerDistanceMoved = Vector3.Distance(_lastPlayerPosition, playerTransform.position);
-            Debug.Log($"Player moved {playerDistanceMoved:F2} units in the last {logInterval:F2}s.");
-            _lastPlayerPosition = playerTransform.position;
-        }
-
-        // Player-to-Enemy Relative Position Change
-        if (playerTransform != null && enemyTransform != null)
-        {
-            float currentDistance = Vector3.Distance(playerTransform.position, enemyTransform.position);
-            float distanceChange = currentDistance - _lastDistanceToEnemy;
-
-            // Determine if player got closer or further
-            string direction = distanceChange < 0 ? "closer to" : "further from";
-            if (Mathf.Approximately(distanceChange, 0)) direction = "same distance from";
-
-            Debug.Log($"Player is {Mathf.Abs(distanceChange):F2} units {direction} enemy.");
-            _lastDistanceToEnemy = currentDistance;
-        }
-        Debug.Log("------------------------------------");
+        AddApmEventTimestamp("PlayerDodge");
     }
 }
