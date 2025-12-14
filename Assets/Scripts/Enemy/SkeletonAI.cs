@@ -23,6 +23,7 @@ public class SkeletonAI : Agent
     }
 
     [System.Serializable]   
+    [System.Serializable]   
     public class AIPersona
     {
         [Range(0, 1)] public float aggression = 0.7f;
@@ -75,6 +76,12 @@ public class SkeletonAI : Agent
     public bool showDebugGizmos = true;
     public float hitRadius = 0.5f;
 
+    // --- Events for Telemetry ---
+    public event System.Action<string> OnEnemyAttackAttempt; 
+    public event System.Action<string> OnEnemyAttackSuccess;
+    // Static event for when the PLAYER successfully parries THIS enemy
+    public static event System.Action OnParrySuccess; 
+
     // --- Private Debug Variables ---
     private Color _originalSwordColor; 
     private Material _swordMaterialInstance; 
@@ -123,9 +130,11 @@ public class SkeletonAI : Agent
         if (availableAttacks.Count == 0) Debug.LogError("Add Attacks to the List in Inspector!");
         
         // Safe Shader Setup
+        // Safe Shader Setup
         if (swordMesh != null) 
         {
             _swordMaterialInstance = swordMesh.material;
+            // Handle URP/Standard shader property names
             if (_swordMaterialInstance.HasProperty("_Color")) _colorPropertyName = "_Color";
             else if (_swordMaterialInstance.HasProperty("_BaseColor")) _colorPropertyName = "_BaseColor";
             else if (_swordMaterialInstance.HasProperty("_MainColor")) _colorPropertyName = "_MainColor";
@@ -157,7 +166,7 @@ public class SkeletonAI : Agent
         sensor.AddObservation(transform.forward); 
         sensor.AddObservation((_target.position - transform.position).normalized);
 
-        // 3. Telemetry Data (11)
+        // 3. Telemetry Data (Player Modeling) (11 floats)
         sensor.AddObservation(telemetrySystem.PlayerEnemyDistance_Agent);
         sensor.AddObservation(telemetrySystem.PlayerEnemyDistanceChange_Agent);
         sensor.AddObservation(telemetrySystem.PlayerHealthPercentage_Agent);
@@ -211,6 +220,8 @@ public class SkeletonAI : Agent
         // --- MultiGAIL Reward ---
         if (useMultiGAILReward && multiGAILManager != null && _target != null)
         {
+            // Reconstruct the observation list for the Critic
+            // (In production, cache this list to avoid allocation)
             float distance = Vector3.Distance(transform.position, _target.position);
             List<float> currentObs = new List<float>
             {
@@ -239,30 +250,95 @@ public class SkeletonAI : Agent
         }
     }
 
-    // --- ML-AGENTS: HEURISTIC (Default Behavior) ---
+    // --- ML-AGENTS: HEURISTIC (The Smart Teacher) ---
     public override void Heuristic(in ActionBuffers actionsOut)
     {
         var discreteActions = actionsOut.DiscreteActions;
         discreteActions[0] = 0; // Default: Wait
 
         // Only decide if timer is ready
+        // Only decide if timer is ready
         if (_currentState == AIState.Strategizing && _decisionTimer > currentPersona.decisionFrequency)
         {
             float dist = 0f;
             if (_target) dist = Vector3.Distance(transform.position, _target.position);
             
-            // Panic Check
-            if (dist < 1.5f && UnityEngine.Random.value < currentPersona.aggression)
+            // 1. Interrupt: Panic/Whiff Punish
+            if (dist < 1.5f && Random.value < currentPersona.aggression)
             {
-                discreteActions[0] = 1; // Force Basic Attack
+                discreteActions[0] = 1; // Force Basic Attack (Assumed Index 0 + 1)
                 return;
             }
 
-            // Normal Choice
-            EnemyAttack chosen = ChooseNextAttackStrategy_Heuristic();
-            int listIndex = availableAttacks.IndexOf(chosen);
-            discreteActions[0] = listIndex + 1;
+            // 2. Utility-Based Choice (Smart Selection)
+            EnemyAttack bestMove = ChooseSmartAttack();
+            
+            if (bestMove != null)
+            {
+                int listIndex = availableAttacks.IndexOf(bestMove);
+                discreteActions[0] = listIndex + 1;
+            }
+            else
+            {
+                // Fallback or Retreat
+                discreteActions[0] = availableAttacks.Count + 1; // Retreat Index
+            }
         }
+    }
+
+    // --- UTILITY SYSTEM FOR HEURISTIC ---
+    EnemyAttack ChooseSmartAttack()
+    {
+        float currentDist = Vector3.Distance(transform.position, _target.position);
+        
+        EnemyAttack bestAttack = null;
+        float bestScore = -999f;
+
+        foreach (var attack in availableAttacks)
+        {
+            float score = CalculateAttackScore(attack, currentDist);
+            
+            // Add Noise to prevent robotic perfection
+            score += Random.Range(-5f, 5f); 
+
+            if (score > bestScore)
+            {
+                bestScore = score;
+                bestAttack = attack;
+            }
+        }
+        return bestAttack;
+    }
+
+    float CalculateAttackScore(EnemyAttack attack, float dist)
+    {
+        float score = 0f;
+
+        // 1. Range Scoring
+        float distDiff = Mathf.Abs(dist - attack.optimalRange);
+        if (distDiff <= attack.rangeTolerance) score += 50f;
+        else score -= distDiff * 2f; 
+
+        // 2. Context Scoring (Kiting vs Brawling)
+        if (dist > 5.0f && attack.optimalRange > 4.0f) score += 30f;
+        if (dist < 2.0f && attack.optimalRange < 2.5f) score += 20f;
+
+        // 3. Telemetry Reading (The "Intelligence")
+        if (telemetrySystem != null)
+        {
+            // Punish Low Stamina
+            if (telemetrySystem.PlayerStaminaPercentage_Agent < 0.3f && attack.windUpTime < 0.5f) 
+                score += 15f;
+
+            // Punish Parry Spam with Slow Attacks
+            if (telemetrySystem.ParrySuccessRate_Agent < 0.3f && telemetrySystem.TotalParries_Agent > 3)
+            {
+                if (attack.damageDuration > 0.5f) score += 20f;
+            }
+        }
+
+        score += attack.weight; // Designer bias
+        return score;
     }
 
     // --- UNITY UPDATE LOOP ---
@@ -280,12 +356,11 @@ public class SkeletonAI : Agent
         {
             _decisionTimer += Time.deltaTime;
             // Ask for a decision every frame while strategizing
-            // (The Heuristic or NN will decide based on _decisionTimer internally)
             RequestDecision();
         }
         else
         {
-            // If we are maneuvering or retreating, we handle it deterministically
+            // For other states (Maneuvering, Retreating), run internal logic
             ManageActiveState(distance);
         }
 
@@ -389,10 +464,9 @@ public class SkeletonAI : Agent
         
         _currentExecutingAttack = _plannedAttack ?? availableAttacks[0];
         
-        // FIRE EVENT: Log which attack is being tried
-        OnEnemyAttackAttempt?.Invoke(_currentExecutingAttack.name); 
+        // Log Attempt Telemetry
+        OnEnemyAttackAttempt?.Invoke(_currentExecutingAttack.name);
 
-        
         _animator.SetInteger(AttackIndex, _currentExecutingAttack.animationIndex);
         _animator.SetTrigger(TriggerAttack);
 
@@ -461,13 +535,19 @@ public class SkeletonAI : Agent
         _isActionLocked = false;
     }
 
-    // --- HELPERS ---
-    EnemyAttack ChooseNextAttackStrategy()
+    // --- HIT REGISTRATION ---
+    public void RegisterHit()
     {
-        return ChooseNextAttackStrategy_Heuristic();
+        if (_currentExecutingAttack != null)
+        {
+            OnEnemyAttackSuccess?.Invoke(_currentExecutingAttack.name);
+        }
     }
 
-    EnemyAttack ChooseNextAttackStrategy_Heuristic()
+    // --- HELPERS ---
+    
+    // Default fallback if logic fails
+    EnemyAttack ChooseRandomAttack()
     {
         float totalWeight = 0;
         foreach (var atk in availableAttacks) totalWeight += atk.weight;
@@ -515,7 +595,7 @@ public class SkeletonAI : Agent
         if (_currentState == newState) return;
         _currentState = newState;
         _decisionTimer = 0; 
-        if (newState == AIState.Retreating) _retreatType = (UnityEngine.Random.value > 0.5f) ? 0 : 1; 
+        if (newState == AIState.Retreating) _retreatType = (Random.value > 0.5f) ? 0 : 1; 
     }
 
     void UpdateAnim(float x, float z)
