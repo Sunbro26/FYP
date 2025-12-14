@@ -2098,7 +2098,6 @@ MonoBehaviour:
   logInterval: 10
   playerTransform: {fileID: 312797410}
   enemyTransform: {fileID: 385033935}
-  playerStats: {fileID: 312797428}
 --- !u!114 &312797422
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2806,7 +2805,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Unity.ML-Agents::Unity.MLAgents.Policies.BehaviorParameters
   m_BrainParameters:
-    VectorObservationSize: 20
+    VectorObservationSize: 28
     NumStackedVectorObservations: 1
     m_ActionSpec:
       m_NumContinuousActions: 0
@@ -2817,13 +2816,29 @@ MonoBehaviour:
     hasUpgradedBrainParametersWithActionSpec: 1
   m_Model: {fileID: 0}
   m_InferenceDevice: 0
-  m_BehaviorType: 0
+  m_BehaviorType: 1
   m_BehaviorName: Passive
   TeamId: 0
   m_UseChildSensors: 1
   m_UseChildActuators: 1
   m_DeterministicInference: 0
   m_ObservableAttributeHandling: 0
+--- !u!114 &385033940
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 385033926}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f2902496c0120472b90269f94a0aec7e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.ML-Agents::Unity.MLAgents.Demonstrations.DemonstrationRecorder
+  Record: 1
+  NumStepsToRecord: 5000
+  DemonstrationName: Aggressive
+  DemonstrationDirectory: ../TrainingData
 --- !u!1001 &391245703
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -9834,6 +9849,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 8210207690257594047, guid: 4921fcd859a7b0c45848c5f54d6077ad, type: 3}
       insertIndex: -1
       addedObject: {fileID: 385033938}
+    - targetCorrespondingSourceObject: {fileID: 8210207690257594047, guid: 4921fcd859a7b0c45848c5f54d6077ad, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 385033940}
     - targetCorrespondingSourceObject: {fileID: 3708339280603157149, guid: 4921fcd859a7b0c45848c5f54d6077ad, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1562482257}
