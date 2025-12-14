@@ -8,7 +8,7 @@ using Unity.MLAgents.Sensors;
 using Unity.MLAgents.Actuators;
 
 [RequireComponent(typeof(NavMeshAgent), typeof(Animator))]
-public class SkeletonAI : Agent // Inherits from Agent now
+public class SkeletonAI : Agent 
 {
     // --- Definitions ---
     public enum AIState
@@ -55,8 +55,8 @@ public class SkeletonAI : Agent // Inherits from Agent now
     public float attackAnimDuration = 1.2f;
 
     [Header("ML Integrations")]
-    public Telemetry telemetrySystem; // Drag your Telemetry GameObject here
-    public MultiGAILManager multiGAILManager; // Drag your MultiGAIL Manager here
+    public Telemetry telemetrySystem; 
+    public MultiGAILManager multiGAILManager; 
     [Tooltip("If true, uses MultiGAIL reward signal. If false, uses standard sparse rewards.")]
     public bool useMultiGAILReward = true;
 
@@ -102,47 +102,53 @@ public class SkeletonAI : Agent // Inherits from Agent now
     {
         if (_target == null || telemetrySystem == null)
         {
-            // FALLBACK BLOCK (Must add exactly 13 floats)
-            sensor.AddObservation(0f); // 1. State
-            sensor.AddObservation(0f); // 2. Damage
-
-            sensor.AddObservation(0f); // 3. Distance
-            sensor.AddObservation(Vector3.zero); // 4, 5, 6. Facing (3 floats)
-            sensor.AddObservation(Vector3.zero); // 7, 8, 9. Direction to Player (3 floats)
-
-            sensor.AddObservation(0f); // 10. APM
-            sensor.AddObservation(0f); // 11. Attack APM
-            sensor.AddObservation(0f); // 12. Dist Moved
-            sensor.AddObservation(0f); // 13. Dist Change
+            // FALLBACK BLOCK (Must match the total count below: 20 floats)
+            sensor.AddObservation(0f); // State
+            sensor.AddObservation(0f); // Dmg
+            sensor.AddObservation(0f); // Dist
+            sensor.AddObservation(Vector3.zero); // Facing (3)
+            sensor.AddObservation(Vector3.zero); // Dir (3)
+            
+            // Telemetry Fallbacks (11 floats)
+            for(int i=0; i<11; i++) sensor.AddObservation(0f);
             return;
         }
 
-        // MAIN LOGIC BLOCK (Adds 13 floats)
         // 1. Internal State (2 floats)
-        sensor.AddObservation((float)_currentState); // What am I doing?
+        sensor.AddObservation((float)_currentState); 
         sensor.AddObservation(canDealDamage);
 
         // 2. Physical Observation (7 floats)
         float distance = Vector3.Distance(transform.position, _target.position);
         sensor.AddObservation(distance);
-        sensor.AddObservation(transform.forward); // Facing direction
-        sensor.AddObservation((_target.position - transform.position).normalized); // Direction to player
+        sensor.AddObservation(transform.forward); 
+        sensor.AddObservation((_target.position - transform.position).normalized);
 
-        // 3. Telemetry Data (Player Modeling, 4 floats)
-        // This is where the AI reads the player's behavior from your Telemetry script
-        sensor.AddObservation(telemetrySystem.TotalAPM_Agent);
-        sensor.AddObservation(telemetrySystem.PlayerAttackAPM_Agent);
-        sensor.AddObservation(telemetrySystem.PlayerDistanceMoved_Agent);
+        // 3. Telemetry Data (Player Modeling) (11 floats)
+        // Spatial
+        sensor.AddObservation(telemetrySystem.PlayerEnemyDistance_Agent);
         sensor.AddObservation(telemetrySystem.PlayerEnemyDistanceChange_Agent);
+        
+        // Resources
+        sensor.AddObservation(telemetrySystem.PlayerHealthPercentage_Agent);
+        sensor.AddObservation(telemetrySystem.PlayerStaminaPercentage_Agent);
+        sensor.AddObservation(telemetrySystem.StaminaUsageRate_Agent);
+
+        // Performance / Skill
+        sensor.AddObservation(telemetrySystem.RecentDamageDealt_Agent);
+        sensor.AddObservation(telemetrySystem.RecentDamageReceived_Agent);
+        sensor.AddObservation(telemetrySystem.AttackSuccessRate_Agent);
+        sensor.AddObservation(telemetrySystem.ParrySuccessRate_Agent);
+        sensor.AddObservation(telemetrySystem.DodgeSuccessRate_Agent);
+        
+        // General Activity
+        sensor.AddObservation(telemetrySystem.TotalAttacks_Agent); // Or TotalAPM, depending on preference
     }
 
     // --- ML-AGENTS: ACTIONS (The Brain's Decision) ---
     public override void OnActionReceived(ActionBuffers actions)
     {
-        // Discrete Action 0: Strategic Decision 
-        // 0 = Wait/Circle, 1 = Plan Attack 0, 2 = Plan Attack 1, ... N = Plan Attack N, N+1 = Retreat
         int decision = actions.DiscreteActions[0];
-
         float distance = 0f;
         if (_target != null) distance = Vector3.Distance(transform.position, _target.position);
 
@@ -151,19 +157,18 @@ public class SkeletonAI : Agent // Inherits from Agent now
         {
             if (decision == 0)
             {
-                // AI chooses to keep circling/waiting
+                // Wait/Circle
             }
             else if (decision <= availableAttacks.Count)
             {
-                // AI chooses a specific attack (1-indexed in array, so minus 1)
+                // Plan Attack
                 int attackIdx = decision - 1;
                 _plannedAttack = availableAttacks[attackIdx];
-                // Debug.Log($"ML Brain Chose: {_plannedAttack.name}");
                 SwitchState(AIState.Maneuvering);
             }
             else
             {
-                // AI Chooses to Retreat (highest index)
+                // Retreat
                 SwitchState(AIState.Retreating);
             }
         }
@@ -171,28 +176,35 @@ public class SkeletonAI : Agent // Inherits from Agent now
         // --- REWARD CALCULATION (MultiGAIL) ---
         if (useMultiGAILReward && multiGAILManager != null)
         {
-            // Reconstruct observations for the MultiGAIL critic
-            // Note: In a real scenario, you might cache the list sent to CollectObservations to avoid duplicates
+            // Reconstruct observations list manually for the Critic
             List<float> currentObs = new List<float>();
+            
+            // 1. Internal
             currentObs.Add((float)_currentState);
             currentObs.Add(canDealDamage ? 1f : 0f);
+            
+            // 2. Physical
             currentObs.Add(distance);
-            // ... (Add other obs to match training) ...
-            // Vector3s need to be broken down manually for the list
             currentObs.Add(transform.forward.x);
             currentObs.Add(transform.forward.y);
             currentObs.Add(transform.forward.z);
-
             Vector3 dir = (_target.position - transform.position).normalized;
             currentObs.Add(dir.x);
             currentObs.Add(dir.y);
             currentObs.Add(dir.z);
 
-            currentObs.Add(telemetrySystem.TotalAPM_Agent);
-            currentObs.Add(telemetrySystem.PlayerAttackAPM_Agent);
-            currentObs.Add(telemetrySystem.PlayerDistanceMoved_Agent);
+            // 3. Telemetry (Must match CollectObservations order)
+            currentObs.Add(telemetrySystem.PlayerEnemyDistance_Agent);
             currentObs.Add(telemetrySystem.PlayerEnemyDistanceChange_Agent);
-
+            currentObs.Add(telemetrySystem.PlayerHealthPercentage_Agent);
+            currentObs.Add(telemetrySystem.PlayerStaminaPercentage_Agent);
+            currentObs.Add(telemetrySystem.StaminaUsageRate_Agent);
+            currentObs.Add(telemetrySystem.RecentDamageDealt_Agent);
+            currentObs.Add(telemetrySystem.RecentDamageReceived_Agent);
+            currentObs.Add(telemetrySystem.AttackSuccessRate_Agent);
+            currentObs.Add(telemetrySystem.ParrySuccessRate_Agent);
+            currentObs.Add(telemetrySystem.DodgeSuccessRate_Agent);
+            currentObs.Add((float)telemetrySystem.TotalAttacks_Agent);
 
             // Calculate Style Reward
             float styleReward = multiGAILManager.CalculateStyleReward(currentObs, decision);
@@ -201,20 +213,18 @@ public class SkeletonAI : Agent // Inherits from Agent now
     }
 
     // --- ML-AGENTS: HEURISTIC (The "Old" Logic) ---
-    // This function is called ONLY when no Neural Network is controlling the agent.
-    // We put your ORIGINAL random logic here. This ensures the AI works exactly as before
-    // for testing, but uses ML when trained.
     public override void Heuristic(in ActionBuffers actionsOut)
     {
         var discreteActions = actionsOut.DiscreteActions;
         discreteActions[0] = 0; // Default: Wait
 
-        // Only make a decision if the timer is ready (replicating the old Update logic)
+        // Only make a decision if the timer is ready
         if (_currentState == AIState.Strategizing && _decisionTimer > currentPersona.decisionFrequency)
         {
             // Logic 1: Panic Attack check
             float dist = 0f;
             if (_target) dist = Vector3.Distance(transform.position, _target.position);
+            
             if (dist < 1.5f && Random.value < currentPersona.aggression)
             {
                 // Force Attack 0 (Basic Slash) -> In our mapping, this is Action 1
@@ -240,19 +250,15 @@ public class SkeletonAI : Agent // Inherits from Agent now
         float distance = Vector3.Distance(transform.position, _target.position);
 
         // 1. BRAIN: Request Decision
-        // We act on the decision timer.
-        // If we are in a state that needs a decision, we ask the Brain (or Heuristic).
         if (_currentState == AIState.Strategizing)
         {
             _decisionTimer += Time.deltaTime;
-
-            // We request a decision every frame while strategizing, 
-            // allowing the ML model (or Heuristic) to decide WHEN to act.
+            // Constant decision requests allows the brain to act whenever it wants
             RequestDecision();
         }
         else
         {
-            // For other states (Maneuvering, Retreating), we run internal logic
+            // For other states (Maneuvering, Retreating), run internal logic
             ManageActiveState(distance);
         }
 
@@ -272,7 +278,6 @@ public class SkeletonAI : Agent // Inherits from Agent now
                 break;
 
             case AIState.Maneuvering:
-                // We have a plan. Are we in position?
                 if (IsPositionedForPlan(dist))
                 {
                     StartCoroutine(ExecuteAttackRoutine());
@@ -411,7 +416,7 @@ public class SkeletonAI : Agent // Inherits from Agent now
         float remaining = attackAnimDuration - damageStartDelay - damageWindowDuration;
         if (remaining > 0) yield return new WaitForSeconds(remaining);
 
-        // Heuristic Post-Attack decision (ML will handle this in next decision step)
+        // Heuristic Post-Attack decision
         if (Random.value < currentPersona.fear)
         {
             _retreatType = 1;
