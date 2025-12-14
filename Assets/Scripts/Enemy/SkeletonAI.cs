@@ -2,38 +2,42 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
+// --- ML-AGENTS IMPORTS ---
+using Unity.MLAgents;
+using Unity.MLAgents.Sensors;
+using Unity.MLAgents.Actuators;
 
 [RequireComponent(typeof(NavMeshAgent), typeof(Animator))]
-public class SkeletonAI : MonoBehaviour
+public class SkeletonAI : Agent // Inherits from Agent now
 {
     // --- Definitions ---
     public enum AIState
     {
-        Idle,           // Waiting for player
-        Strategizing,   // Circling while deciding on a plan
-        Maneuvering,    // Moving to the specific range required by the plan
-        Attacking,      // Locked in animation
-        Retreating,     // Defensive retreat (Bait/Reset)
-        Stunned         // Parried
+        Idle,
+        Strategizing,
+        Maneuvering,
+        Attacking,
+        Retreating,
+        Stunned
     }
 
-[System.Serializable]
+    [System.Serializable]
     public class AIPersona
     {
-        [Range(0, 1)] public float aggression = 0.7f; 
-        [Range(0, 1)] public float fear = 0.2f;       
-        public float decisionFrequency = 2.0f; 
-        public float preferredCombatRange = 2.5f; 
+        [Range(0, 1)] public float aggression = 0.7f;
+        [Range(0, 1)] public float fear = 0.2f;
+        public float decisionFrequency = 2.0f;
+        public float preferredCombatRange = 2.5f;
     }
 
     [System.Serializable]
     public class EnemyAttack
     {
-        public string name;             // e.g. "Dash Attack"
-        public int animationIndex;      // Matches Animator
-        public float optimalRange;      // e.g. 6.0 for Dash, 1.5 for Slash
-        public float rangeTolerance = 0.5f; // Precision needed
-        public float weight = 1.0f;     // Likelihood of picking
+        public string name;
+        public int animationIndex;
+        public float optimalRange;
+        public float rangeTolerance = 0.5f;
+        public float weight = 1.0f;
         public bool requiresLineOfSight = true;
     }
 
@@ -43,22 +47,28 @@ public class SkeletonAI : MonoBehaviour
     public float circleSpeed = 2.5f;
 
     [Header("Attack Library")]
-    public List<EnemyAttack> availableAttacks; // POPULATE THIS IN INSPECTOR!
+    public List<EnemyAttack> availableAttacks;
 
     [Header("Combat Timing")]
     public float damageStartDelay = 0.4f;
     public float damageWindowDuration = 0.2f;
     public float attackAnimDuration = 1.2f;
 
+    [Header("ML Integrations")]
+    public Telemetry telemetrySystem; // Drag your Telemetry GameObject here
+    public MultiGAILManager multiGAILManager; // Drag your MultiGAIL Manager here
+    [Tooltip("If true, uses MultiGAIL reward signal. If false, uses standard sparse rewards.")]
+    public bool useMultiGAILReward = true;
+
     // --- State Variables ---
     private AIState _currentState;
     private NavMeshAgent _agent;
     private Animator _animator;
     private Transform _target;
-    private EnemyAttack _plannedAttack; // The GOAL
+    private EnemyAttack _plannedAttack;
     private float _decisionTimer;
     private bool _isActionLocked = false;
-    private int _retreatType = 0; // 0=Bait, 1=Reset
+    private int _retreatType = 0;
 
     // Circling vars
     private float _strafeDirection = 1f;
@@ -74,63 +84,191 @@ public class SkeletonAI : MonoBehaviour
     private static readonly int TriggerAttack = Animator.StringToHash("TriggerAttack");
     private static readonly int AttackSpeedHash = Animator.StringToHash("AttackSpeed");
 
-    void Start()
+    // --- ML-AGENTS: INITIALIZATION ---
+    public override void Initialize()
     {
         _agent = GetComponent<NavMeshAgent>();
         _animator = GetComponent<Animator>();
         GameObject p = GameObject.FindGameObjectWithTag("Player");
         if (p) _target = p.transform;
 
-        // Default setup
-        if(availableAttacks.Count == 0) Debug.LogError("Add Attacks to the List in Inspector!");
-        
+        if (availableAttacks.Count == 0) Debug.LogError("Add Attacks to the List in Inspector!");
+
         SwitchState(AIState.Idle);
     }
 
+    // --- ML-AGENTS: OBSERVATIONS (The Eyes) ---
+    public override void CollectObservations(VectorSensor sensor)
+    {
+        if (_target == null || telemetrySystem == null)
+        {
+            // FALLBACK BLOCK (Must add exactly 13 floats)
+            sensor.AddObservation(0f); // 1. State
+            sensor.AddObservation(0f); // 2. Damage
+
+            sensor.AddObservation(0f); // 3. Distance
+            sensor.AddObservation(Vector3.zero); // 4, 5, 6. Facing (3 floats)
+            sensor.AddObservation(Vector3.zero); // 7, 8, 9. Direction to Player (3 floats)
+
+            sensor.AddObservation(0f); // 10. APM
+            sensor.AddObservation(0f); // 11. Attack APM
+            sensor.AddObservation(0f); // 12. Dist Moved
+            sensor.AddObservation(0f); // 13. Dist Change
+            return;
+        }
+
+        // MAIN LOGIC BLOCK (Adds 13 floats)
+        // 1. Internal State (2 floats)
+        sensor.AddObservation((float)_currentState); // What am I doing?
+        sensor.AddObservation(canDealDamage);
+
+        // 2. Physical Observation (7 floats)
+        float distance = Vector3.Distance(transform.position, _target.position);
+        sensor.AddObservation(distance);
+        sensor.AddObservation(transform.forward); // Facing direction
+        sensor.AddObservation((_target.position - transform.position).normalized); // Direction to player
+
+        // 3. Telemetry Data (Player Modeling, 4 floats)
+        // This is where the AI reads the player's behavior from your Telemetry script
+        sensor.AddObservation(telemetrySystem.TotalAPM_Agent);
+        sensor.AddObservation(telemetrySystem.PlayerAttackAPM_Agent);
+        sensor.AddObservation(telemetrySystem.PlayerDistanceMoved_Agent);
+        sensor.AddObservation(telemetrySystem.PlayerEnemyDistanceChange_Agent);
+    }
+
+    // --- ML-AGENTS: ACTIONS (The Brain's Decision) ---
+    public override void OnActionReceived(ActionBuffers actions)
+    {
+        // Discrete Action 0: Strategic Decision 
+        // 0 = Wait/Circle, 1 = Plan Attack 0, 2 = Plan Attack 1, ... N = Plan Attack N, N+1 = Retreat
+        int decision = actions.DiscreteActions[0];
+
+        float distance = 0f;
+        if (_target != null) distance = Vector3.Distance(transform.position, _target.position);
+
+        // --- Execute Logic based on ML Decision ---
+        if (_currentState == AIState.Strategizing)
+        {
+            if (decision == 0)
+            {
+                // AI chooses to keep circling/waiting
+            }
+            else if (decision <= availableAttacks.Count)
+            {
+                // AI chooses a specific attack (1-indexed in array, so minus 1)
+                int attackIdx = decision - 1;
+                _plannedAttack = availableAttacks[attackIdx];
+                // Debug.Log($"ML Brain Chose: {_plannedAttack.name}");
+                SwitchState(AIState.Maneuvering);
+            }
+            else
+            {
+                // AI Chooses to Retreat (highest index)
+                SwitchState(AIState.Retreating);
+            }
+        }
+
+        // --- REWARD CALCULATION (MultiGAIL) ---
+        if (useMultiGAILReward && multiGAILManager != null)
+        {
+            // Reconstruct observations for the MultiGAIL critic
+            // Note: In a real scenario, you might cache the list sent to CollectObservations to avoid duplicates
+            List<float> currentObs = new List<float>();
+            currentObs.Add((float)_currentState);
+            currentObs.Add(canDealDamage ? 1f : 0f);
+            currentObs.Add(distance);
+            // ... (Add other obs to match training) ...
+            // Vector3s need to be broken down manually for the list
+            currentObs.Add(transform.forward.x);
+            currentObs.Add(transform.forward.y);
+            currentObs.Add(transform.forward.z);
+
+            Vector3 dir = (_target.position - transform.position).normalized;
+            currentObs.Add(dir.x);
+            currentObs.Add(dir.y);
+            currentObs.Add(dir.z);
+
+            currentObs.Add(telemetrySystem.TotalAPM_Agent);
+            currentObs.Add(telemetrySystem.PlayerAttackAPM_Agent);
+            currentObs.Add(telemetrySystem.PlayerDistanceMoved_Agent);
+            currentObs.Add(telemetrySystem.PlayerEnemyDistanceChange_Agent);
+
+
+            // Calculate Style Reward
+            float styleReward = multiGAILManager.CalculateStyleReward(currentObs, decision);
+            AddReward(styleReward);
+        }
+    }
+
+    // --- ML-AGENTS: HEURISTIC (The "Old" Logic) ---
+    // This function is called ONLY when no Neural Network is controlling the agent.
+    // We put your ORIGINAL random logic here. This ensures the AI works exactly as before
+    // for testing, but uses ML when trained.
+    public override void Heuristic(in ActionBuffers actionsOut)
+    {
+        var discreteActions = actionsOut.DiscreteActions;
+        discreteActions[0] = 0; // Default: Wait
+
+        // Only make a decision if the timer is ready (replicating the old Update logic)
+        if (_currentState == AIState.Strategizing && _decisionTimer > currentPersona.decisionFrequency)
+        {
+            // Logic 1: Panic Attack check
+            float dist = 0f;
+            if (_target) dist = Vector3.Distance(transform.position, _target.position);
+            if (dist < 1.5f && Random.value < currentPersona.aggression)
+            {
+                // Force Attack 0 (Basic Slash) -> In our mapping, this is Action 1
+                discreteActions[0] = 1;
+                return;
+            }
+
+            // Logic 2: Standard Weighted Choice
+            EnemyAttack chosen = ChooseNextAttackStrategy_Heuristic();
+            int listIndex = availableAttacks.IndexOf(chosen);
+
+            // Map list index to Action Index (Action 0 is wait, so we add 1)
+            discreteActions[0] = listIndex + 1;
+        }
+    }
+
+    // --- UNITY UPDATE LOOP ---
     void Update()
     {
         if (_target == null) return;
-        if (_isActionLocked) return; 
+        if (_isActionLocked) return;
 
         float distance = Vector3.Distance(transform.position, _target.position);
 
-        // 1. BRAIN: Decide Strategy
-        DecideStrategy(distance);
+        // 1. BRAIN: Request Decision
+        // We act on the decision timer.
+        // If we are in a state that needs a decision, we ask the Brain (or Heuristic).
+        if (_currentState == AIState.Strategizing)
+        {
+            _decisionTimer += Time.deltaTime;
 
-        // 2. BODY: Execute Movement based on Strategy
+            // We request a decision every frame while strategizing, 
+            // allowing the ML model (or Heuristic) to decide WHEN to act.
+            RequestDecision();
+        }
+        else
+        {
+            // For other states (Maneuvering, Retreating), we run internal logic
+            ManageActiveState(distance);
+        }
+
+        // 2. BODY: Execute Movement based on Current State
         ExecuteStateMovement(distance);
 
         if (_currentState != AIState.Stunned) FaceTarget();
     }
 
-    // --- THE GOAL-ORIENTED BRAIN ---
-    void DecideStrategy(float dist)
+    // --- LOGIC: State Management (Non-Decision States) ---
+    void ManageActiveState(float dist)
     {
         switch (_currentState)
         {
             case AIState.Idle:
                 if (dist < sensorRadius) SwitchState(AIState.Strategizing);
-                break;
-
-            case AIState.Strategizing:
-                // We are circling, looking for an opening.
-                _decisionTimer += Time.deltaTime;
-                // 1. Interrupt: Too Close?
-                if (dist < 1.5f && Random.value < currentPersona.aggression)
-                {
-                    // Panic/Punish Attack (Force Basic Slash)
-                    _plannedAttack = availableAttacks[0]; // Assuming 0 is fast slash
-                    StartCoroutine(ExecuteAttackRoutine());
-                    return;
-                }
-
-                // 2. Make a Plan
-                if (_decisionTimer > currentPersona.decisionFrequency)
-                {
-                    _plannedAttack = ChooseNextAttackStrategy();
-                    Debug.Log($"Plan Formulated: Perform {_plannedAttack.name} at range {_plannedAttack.optimalRange}");
-                    SwitchState(AIState.Maneuvering);
-                }
                 break;
 
             case AIState.Maneuvering:
@@ -139,22 +277,19 @@ public class SkeletonAI : MonoBehaviour
                 {
                     StartCoroutine(ExecuteAttackRoutine());
                 }
-                
-                // Failsafe: If maneuvering takes too long (stuck?), give up
+                // Failsafe
                 _decisionTimer += Time.deltaTime;
                 if (_decisionTimer > 5.0f)
                 {
-                    Debug.Log("Plan Aborted: Took too long.");
                     _plannedAttack = null;
                     SwitchState(AIState.Strategizing);
                 }
                 break;
 
             case AIState.Retreating:
-                // Logic for Baits/Resets (Same as before)
                 if (_retreatType == 0) // Bait
                 {
-                    if (dist < 2.0f) { StartCoroutine(ExecuteAttackRoutine()); return; } // Punish
+                    if (dist < 2.0f) { StartCoroutine(ExecuteAttackRoutine()); return; }
                     if (dist > currentPersona.preferredCombatRange) SwitchState(AIState.Strategizing);
                 }
                 else if (_retreatType == 1) // Reset
@@ -171,35 +306,28 @@ public class SkeletonAI : MonoBehaviour
         switch (_currentState)
         {
             case AIState.Strategizing:
-                // Just circle/strafe menacingly
                 _agent.isStopped = true;
                 HandleCirclingMovement();
                 break;
 
             case AIState.Maneuvering:
-                // GOAL MOVEMENT: Move specifically to satisfy the plan
                 if (_plannedAttack == null) return;
-
                 _agent.isStopped = false;
                 float targetRange = _plannedAttack.optimalRange;
 
-                // Logic: How do I get to optimal range?
                 if (dist > targetRange + _plannedAttack.rangeTolerance)
                 {
-                    // Too far? Chase.
                     _agent.SetDestination(_target.position);
-                    UpdateAnim(0, 1); 
+                    UpdateAnim(0, 1);
                 }
                 else if (dist < targetRange - _plannedAttack.rangeTolerance)
                 {
-                    // Too close? Back up (Tactical Retreat)
                     Vector3 fleeDir = (transform.position - _target.position).normalized;
                     _agent.SetDestination(transform.position + fleeDir * 2f);
                     UpdateAnim(0, -1);
                 }
                 else
                 {
-                    // In position! Stop.
                     _agent.isStopped = true;
                     UpdateAnim(0, 0);
                 }
@@ -214,35 +342,29 @@ public class SkeletonAI : MonoBehaviour
         }
     }
 
-    // --- HELPER LOGIC ---
-
-    EnemyAttack ChooseNextAttackStrategy()
+    // --- HELPER LOGIC (Heuristic Only) ---
+    EnemyAttack ChooseNextAttackStrategy_Heuristic()
     {
-        // Weighted Random Choice
         float totalWeight = 0;
         foreach (var atk in availableAttacks) totalWeight += atk.weight;
-
         float randomValue = Random.Range(0, totalWeight);
         float cursor = 0;
-
         foreach (var atk in availableAttacks)
         {
             cursor += atk.weight;
             if (cursor >= randomValue) return atk;
         }
-        return availableAttacks[0]; // Fallback
+        return availableAttacks[0];
     }
 
     bool IsPositionedForPlan(float dist)
     {
         if (_plannedAttack == null) return false;
-        // Check if distance is within tolerance of optimal range
         return Mathf.Abs(dist - _plannedAttack.optimalRange) <= _plannedAttack.rangeTolerance;
     }
 
     void HandleCirclingMovement()
     {
-        // Tangent Circling Logic
         Vector3 toPlayer = (_target.position - transform.position).normalized;
         Vector3 tangent = Vector3.Cross(toPlayer, Vector3.up);
 
@@ -254,56 +376,45 @@ public class SkeletonAI : MonoBehaviour
         }
 
         Vector3 finalMove = tangent * _strafeDirection * circleSpeed * Time.deltaTime;
-        
-        // Drift Correction (Pull to preferred range)
         float dist = Vector3.Distance(transform.position, _target.position);
         float error = dist - currentPersona.preferredCombatRange;
-        Vector3 correction = toPlayer * error * 0.5f * Time.deltaTime; 
+        Vector3 correction = toPlayer * error * 0.5f * Time.deltaTime;
 
         _agent.Move(finalMove + correction);
-        
-        // Smooth Anim
         UpdateAnim(_strafeDirection, 0);
     }
 
-    // --- ATTACK EXECUTION ---
     // --- ATTACK EXECUTION ---
     IEnumerator ExecuteAttackRoutine()
     {
         _isActionLocked = true;
         _agent.isStopped = true;
         SwitchState(AIState.Attacking);
-        
+
         int animIndex = (_plannedAttack != null) ? _plannedAttack.animationIndex : 0;
 
         _animator.SetInteger(AttackIndex, animIndex);
         _animator.SetTrigger(TriggerAttack);
 
-        // --- NEW: FACE TARGET DURING WIND-UP ---
-        // Instead of just waiting, we loop through the delay time 
-        // and force the AI to keep rotating towards the player.
         float timer = 0f;
         while (timer < damageStartDelay)
         {
-            FaceTarget(); // Keep tracking the player!
+            FaceTarget();
             timer += Time.deltaTime;
-            yield return null; // Wait for next frame
+            yield return null;
         }
 
-        // --- SWING PHASE (Damage ON) ---
-        // Now we stop rotating so the player can dodge the actual swing
         canDealDamage = true;
         yield return new WaitForSeconds(damageWindowDuration);
         canDealDamage = false;
 
-        // --- RECOVERY PHASE ---
         float remaining = attackAnimDuration - damageStartDelay - damageWindowDuration;
         if (remaining > 0) yield return new WaitForSeconds(remaining);
 
-        // Post-Attack Decision
+        // Heuristic Post-Attack decision (ML will handle this in next decision step)
         if (Random.value < currentPersona.fear)
         {
-            _retreatType = 1; // Reset
+            _retreatType = 1;
             SwitchState(AIState.Retreating);
         }
         else
@@ -311,18 +422,19 @@ public class SkeletonAI : MonoBehaviour
             SwitchState(AIState.Strategizing);
         }
 
-        _plannedAttack = null; 
+        _plannedAttack = null;
         _isActionLocked = false;
         _decisionTimer = 0;
     }
+
     // --- PARRY LOGIC ---
     public void GetParried()
     {
-        StopAllCoroutines(); 
+        StopAllCoroutines();
         _isActionLocked = true;
         _agent.isStopped = true;
-        canDealDamage = false; 
-        SwitchState(AIState.Stunned); 
+        canDealDamage = false;
+        SwitchState(AIState.Stunned);
         StartCoroutine(ParryReboundRoutine());
     }
 
@@ -333,9 +445,9 @@ public class SkeletonAI : MonoBehaviour
         _animator.SetFloat(AttackSpeedHash, 0f);
         yield return new WaitForSeconds(1.5f);
         _animator.SetFloat(AttackSpeedHash, 1.0f);
-        
-        _retreatType = 1; // Always reset after stun
-        SwitchState(AIState.Retreating); 
+
+        _retreatType = 1;
+        SwitchState(AIState.Retreating);
         _isActionLocked = false;
     }
 
@@ -344,12 +456,11 @@ public class SkeletonAI : MonoBehaviour
     {
         if (_currentState == newState) return;
         _currentState = newState;
-        _decisionTimer = 0; // Reset timer on state change
-        
-        // Init Retreat logic
+        _decisionTimer = 0;
+
         if (newState == AIState.Retreating)
         {
-            _retreatType = (Random.value > 0.5f) ? 0 : 1; 
+            _retreatType = (Random.value > 0.5f) ? 0 : 1;
         }
     }
 
