@@ -23,7 +23,6 @@ public class SkeletonAI : Agent
     }
 
     [System.Serializable]   
-    [System.Serializable]   
     public class AIPersona
     {
         [Range(0, 1)] public float aggression = 0.7f;
@@ -105,14 +104,7 @@ public class SkeletonAI : Agent
 
     public bool canDealDamage = false;
 
-    public static event Action OnParrySuccess;
-
-    // New Events for Telemetry
-    public event Action<string> OnEnemyAttackAttempt; 
-    public event Action<string> OnEnemyAttackSuccess;
-    
-
-    // --- Hashes ---
+    // --- Hashes --
     private static readonly int MoveX = Animator.StringToHash("MoveX");
     private static readonly int MoveZ = Animator.StringToHash("MoveZ");
     private static readonly int AttackIndex = Animator.StringToHash("AttackIndex");
@@ -264,7 +256,7 @@ public class SkeletonAI : Agent
             if (_target) dist = Vector3.Distance(transform.position, _target.position);
             
             // 1. Interrupt: Panic/Whiff Punish
-            if (dist < 1.5f && Random.value < currentPersona.aggression)
+            if (dist < 1.5f && UnityEngine.Random.value < currentPersona.aggression)
             {
                 discreteActions[0] = 1; // Force Basic Attack (Assumed Index 0 + 1)
                 return;
@@ -299,7 +291,7 @@ public class SkeletonAI : Agent
             float score = CalculateAttackScore(attack, currentDist);
             
             // Add Noise to prevent robotic perfection
-            score += Random.Range(-5f, 5f); 
+            score += UnityEngine.Random.Range(-5f, 5f); 
 
             if (score > bestScore)
             {
@@ -595,7 +587,7 @@ public class SkeletonAI : Agent
         if (_currentState == newState) return;
         _currentState = newState;
         _decisionTimer = 0; 
-        if (newState == AIState.Retreating) _retreatType = (Random.value > 0.5f) ? 0 : 1; 
+        if (newState == AIState.Retreating) _retreatType = (UnityEngine.Random.value > 0.5f) ? 0 : 1; 
     }
 
     void UpdateAnim(float x, float z)
@@ -626,15 +618,6 @@ public class SkeletonAI : Agent
 
         Gizmos.color = canDealDamage ? new Color(1, 0, 0, 0.5f) : Color.yellow;
         Gizmos.DrawWireSphere(activeBone.position, hitRadius);
-    }
-
-// Call this from your Weapon/Damage script when a hit happens
-    public void RegisterHit()
-    {
-        if (_currentExecutingAttack != null)
-        {
-            OnEnemyAttackSuccess?.Invoke(_currentExecutingAttack.name);
-        }
     }
 
 }
