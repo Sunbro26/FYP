@@ -19,9 +19,8 @@ public class Telemetry : MonoBehaviour
     [SerializeField] private Transform enemyTransform;
     private SkeletonAI enemyAI;
     
-    [Header("Script References")]
-    [Tooltip("Reference to the Player's Health/Stamina script.")]
-    [SerializeField] private CharacterStats PlayerStats; // REPLACE with your actual Stats script type
+    private CharacterStats PlayerStats; // REPLACE with your actual Stats script type
+    private CharacterStats EnemyStats; // REPLACE with your actual Stats script type
 
     // --- SECTION 2: Public Properties for ML-Agent (Observation Vector) ---
     // These are updated every frame.
@@ -94,7 +93,7 @@ public class Telemetry : MonoBehaviour
         PlayerDodge.OnDodgeSuccess += HandleDodgeSuccess;
 
         PlayerStats.OnTakeDamage += HandleDamageReceived;
-        // EnemyStats.OnTakeDamage += HandleDamageDealt;
+        EnemyStats.OnTakeDamage += HandleDamageDealt;
 
         enemyAI.OnEnemyAttackAttempt += HandleEnemyAttackAttempt; // non-static reference as refers to individual enemy damage
         enemyAI.OnEnemyAttackSuccess += HandleEnemyAttackSuccess;
@@ -111,8 +110,11 @@ public class Telemetry : MonoBehaviour
         if (playerTransform == null || enemyTransform == null || PlayerStats == null)
         {
             enemyAI = enemyTransform != null ? enemyTransform.GetComponent<SkeletonAI>() : null;
+            PlayerStats = playerTransform != null ? playerTransform.GetComponent<CharacterStats>() : null;
+            
             Debug.LogError("Telemetry: Missing References! Assign Player, Enemy, and Stats script.", this);
-            this.enabled = false;
+            
+            enabled = false;
             return;
         }
 
@@ -234,7 +236,7 @@ public class Telemetry : MonoBehaviour
     public void HandleDodgeSuccess() { _dodgeSuccesses.Add(Time.time); }
 
     // Damage (Pass the amount of damage taken/dealt)
-    public void HandleDamageDealt(float amount) 
+    public void HandleDamageDealt(int amount) 
     { 
         _damageDealtHistory.Add(new KeyValuePair<float, float>(Time.time, amount)); 
     }
