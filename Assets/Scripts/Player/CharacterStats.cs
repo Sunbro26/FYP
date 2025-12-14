@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
+using System;
 
 public class CharacterStats : MonoBehaviour
 {
@@ -24,6 +25,8 @@ public class CharacterStats : MonoBehaviour
     
     // Flag to check if dead (or defeated)
     public bool IsDead => currentHealth <= 0;
+
+    public event Action<int> OnTakeDamage;
 
     void Awake()
     {
@@ -50,6 +53,7 @@ public class CharacterStats : MonoBehaviour
     {
         if (currentHealth <= 0) return; // Already at 0
 
+        OnTakeDamage.Invoke(damage);
         currentHealth -= damage;
         
         // Clamp to 0 so we don't get negative numbers

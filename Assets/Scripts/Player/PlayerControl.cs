@@ -1,4 +1,5 @@
 using UnityEngine;
+using System;
 
 public class PlayerControl : MonoBehaviour
 {
@@ -17,14 +18,15 @@ public class PlayerControl : MonoBehaviour
     private PlayerBlock _blockScript;
     private PlayerDodge _dodgeScript;
 
+    public static event Action OnBlockSuccess;
+
     void Start()
     {
         _stats = GetComponent<CharacterStats>();
         _blockScript = GetComponent<PlayerBlock>();
         _dodgeScript = GetComponent<PlayerDodge>();
     }
-
-    private void OnTriggerEnter(Collider other)
+private void OnTriggerEnter(Collider other)
     {
         if (other.gameObject.CompareTag("sword"))
         {
@@ -34,34 +36,34 @@ public class PlayerControl : MonoBehaviour
 
             // 2. Check for I-Frames (Dodge)
             PlayerDodge dodgeScript = GetComponent<PlayerDodge>();
-            if (dodgeScript != null && dodgeScript.IsInvincible) return;
+            if (dodgeScript != null && dodgeScript.IsInvincible) 
+            {
+                // --- UPDATE 1: Tell Telemetry this was a successful dodge! ---
+                dodgeScript.RegisterPerfectDodge(); 
+                return;
+            }
 
-            // --- 3. NEW PARRY CHECK ---
+            // --- 3. PARRY CHECK ---
             PlayerParry parryScript = GetComponent<PlayerParry>();
             if (parryScript != null && parryScript.IsParryWindowActive)
             {
-                // Check Direction (Can usually only parry attacks from the front)
                 Vector3 directionToEnemy = (enemyScript.transform.position - transform.position).normalized;
                 float angle = Vector3.Angle(transform.forward, directionToEnemy);
 
-                if (angle <= 60f) // 60 degree cone for parrying
+                if (angle <= 60f) 
                 {
                     Debug.Log("SUCCESSFUL PARRY!");
+                    enemyScript.GetParried(); // Telemetry listens to the event inside here (if added)
                     
-                    // Trigger the enemy rebound
-                    enemyScript.GetParried();
-
-                    // Spawn a spark effect (reuse the block sparks)
                     if (blockSparksPrefab != null)
                     {
                         Instantiate(blockSparksPrefab, blockEffectSpawnPoint.position, Quaternion.identity);
                     }
-                    
-                    return; // Exit completely
+                    return; 
                 }
             }
 
-            // --- 4. DIRECTIONAL BLOCK CHECK ---
+// --- 4. DIRECTIONAL BLOCK CHECK ---
             bool isBlockingSuccessfully = false;
 
             if (_blockScript != null && _blockScript.IsBlocking)
@@ -88,6 +90,7 @@ public class PlayerControl : MonoBehaviour
             // 5. Outcome Logic
             if (isBlockingSuccessfully)
             {
+                OnBlockSuccess?.Invoke(); 
                 // Spawn Particles
                 if (blockSparksPrefab != null && blockEffectSpawnPoint != null)
                 {
@@ -100,6 +103,7 @@ public class PlayerControl : MonoBehaviour
                 enemyScript.canDealDamage = false; 
                 return; 
             }
+
             else
             {
                 // TAKE DAMAGE via CharacterStats
@@ -107,6 +111,7 @@ public class PlayerControl : MonoBehaviour
                 {
                     _stats.TakeDamage(10);
                 }
+                enemyScript.RegisterHit(); 
                 
                 enemyScript.canDealDamage = false;
             }
