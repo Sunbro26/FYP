@@ -83,8 +83,8 @@ public class Telemetry : MonoBehaviour
         // PlayerAttack.OnPlayerAttack += HandleAttackAttempt;
         // PlayerAttack.OnPlayerHitEnemy += HandleAttackSuccess;
 
-        // PlayerBlock.OnParryAttempt += HandleParryAttempt;
-        // PlayerBlock.OnParrySuccess += HandleParrySuccess;
+        PlayerParry.OnParryAttempt += HandleParryAttempt;
+        SkeletonAI.OnParrySuccess += HandleParrySuccess;
 
         // PlayerDodge.OnDodge += HandleDodgeAttempt;
         // PlayerDodge.OnPerfectDodge += HandleDodgeSuccess;

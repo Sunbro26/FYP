@@ -2650,8 +2650,6 @@ MonoBehaviour:
     aggression: 0.9
     fear: 0.2
     decisionFrequency: 2
-    fear: 0.2
-    decisionFrequency: 2
     preferredCombatRange: 1.5
   sensorRadius: 15
   circleSpeed: 1.25
@@ -2736,6 +2734,9 @@ MonoBehaviour:
     totalDuration: 1.85
     tracksPlayerDuringWindup: 1
     useFootHitbox: 1
+  telemetrySystem: {fileID: 312797420}
+  multiGAILManager: {fileID: 0}
+  useMultiGAILReward: 1
   swordMesh: {fileID: 1909943965}
   swordBone: {fileID: 1505110766}
   footBone: {fileID: 1562482256}
@@ -9833,6 +9834,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 8210207690257594047, guid: 4921fcd859a7b0c45848c5f54d6077ad, type: 3}
       insertIndex: -1
       addedObject: {fileID: 385033938}
+    - targetCorrespondingSourceObject: {fileID: 3708339280603157149, guid: 4921fcd859a7b0c45848c5f54d6077ad, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1562482257}
   m_SourcePrefab: {fileID: 100100000, guid: 4921fcd859a7b0c45848c5f54d6077ad, type: 3}
 --- !u!1001 &1465231287
 PrefabInstance:

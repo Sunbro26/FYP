@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using System;
 using UnityEngine;
 using UnityEngine.AI;
 // --- ML-AGENTS IMPORTS ---
@@ -96,6 +97,9 @@ public class SkeletonAI : Agent
     private float _strafeTimer = 0f;
 
     public bool canDealDamage = false;
+
+    public static event Action OnParrySuccess;
+    public static event Action OnDamageTaken;
 
     // --- Hashes ---
     private static readonly int MoveX = Animator.StringToHash("MoveX");
@@ -237,7 +241,7 @@ public class SkeletonAI : Agent
             if (_target) dist = Vector3.Distance(transform.position, _target.position);
             
             // Panic Check
-            if (dist < 1.5f && Random.value < currentPersona.aggression)
+            if (dist < 1.5f && UnityEngine.Random.value < currentPersona.aggression)
             {
                 discreteActions[0] = 1; // Force Basic Attack
                 return;
@@ -399,7 +403,7 @@ public class SkeletonAI : Agent
         if (remaining > 0) yield return new WaitForSeconds(remaining);
 
         // Post-Attack Decision
-        if (Random.value < currentPersona.fear)
+        if (UnityEngine.Random.value < currentPersona.fear)
         {
             _retreatType = 1; 
             SwitchState(AIState.Retreating);
@@ -423,6 +427,7 @@ public class SkeletonAI : Agent
         _agent.isStopped = true;
         canDealDamage = false;
         SwitchState(AIState.Stunned);
+        OnParrySuccess?.Invoke();
         StartCoroutine(ParryReboundRoutine());
     }
 
@@ -451,7 +456,7 @@ public class SkeletonAI : Agent
         float totalWeight = 0;
         foreach (var atk in availableAttacks) totalWeight += atk.weight;
 
-        float randomValue = Random.Range(0, totalWeight);
+        float randomValue = UnityEngine.Random.Range(0, totalWeight);
         float cursor = 0;
 
         foreach (var atk in availableAttacks)
@@ -476,7 +481,7 @@ public class SkeletonAI : Agent
         _strafeTimer += Time.deltaTime;
         if (_strafeTimer > 3.0f)
         {
-            _strafeDirection = (Random.value > 0.5f) ? 1f : -1f;
+            _strafeDirection = (UnityEngine.Random.value > 0.5f) ? 1f : -1f;
             _strafeTimer = 0f;
         }
 
@@ -494,7 +499,7 @@ public class SkeletonAI : Agent
         if (_currentState == newState) return;
         _currentState = newState;
         _decisionTimer = 0; 
-        if (newState == AIState.Retreating) _retreatType = (Random.value > 0.5f) ? 0 : 1; 
+        if (newState == AIState.Retreating) _retreatType = (UnityEngine.Random.value > 0.5f) ? 0 : 1; 
     }
 
     void UpdateAnim(float x, float z)
