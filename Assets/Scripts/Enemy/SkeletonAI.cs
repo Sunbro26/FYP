@@ -21,8 +21,7 @@ public class SkeletonAI : Agent
         Stunned
     }
 
-    [System.Serializable]
-    [System.Serializable]
+    [System.Serializable]   
     public class AIPersona
     {
         [Range(0, 1)] public float aggression = 0.7f;
@@ -61,33 +60,40 @@ public class SkeletonAI : Agent
     [Header("Attack Library")]
     public List<EnemyAttack> availableAttacks; 
 
+    [Header("ML Integrations")]
+    public Telemetry telemetrySystem; 
+    public MultiGAILManager multiGAILManager; 
+    [Tooltip("If true, uses MultiGAIL reward signal. If false, uses standard sparse rewards.")]
+    public bool useMultiGAILReward = true;
+
     // --- Visual Debugging ---
     [Header("Visual Debugging")]
-    [Tooltip("Drag the MeshRenderer of the Sword here to see it flash Red.")]
     public Renderer swordMesh; 
-    
-    [Tooltip("Drag the Sword Bone (Hand) here.")]
     public Transform swordBone;
-    
-    [Tooltip("Drag the Foot Bone here (For Kicks).")]
     public Transform footBone; 
-
-    [Tooltip("Check this to see the hitbox wireframe.")]
     public bool showDebugGizmos = true;
     public float hitRadius = 0.5f;
 
+    // --- Events for Telemetry ---
+    public event System.Action<string> OnEnemyAttackAttempt; 
+    public event System.Action<string> OnEnemyAttackSuccess;
+    // Static event for when the PLAYER successfully parries THIS enemy
+    public static event System.Action OnParrySuccess; 
+
     // --- Private Debug Variables ---
     private Color _originalSwordColor; 
-    private Material _swordMaterialInstance; // Cache the material
-    private string _colorPropertyName; // To store the correct shader property name
+    private Material _swordMaterialInstance; 
+    private string _colorPropertyName; 
 
     // --- State Variables ---
     private AIState _currentState;
     private NavMeshAgent _agent;
     private Animator _animator;
     private Transform _target;
+    
     private EnemyAttack _plannedAttack; 
     private EnemyAttack _currentExecutingAttack; 
+    
     private float _decisionTimer;
     private bool _isActionLocked = false;
     private int _retreatType = 0; 
@@ -114,26 +120,17 @@ public class SkeletonAI : Agent
 
         if (availableAttacks.Count == 0) Debug.LogError("Add Attacks to the List in Inspector!");
         
-        // --- NEW: SAFE SHADER SETUP ---
+        // Safe Shader Setup
         if (swordMesh != null) 
         {
-            // Creates a temporary instance of the material so we don't change the asset file
             _swordMaterialInstance = swordMesh.material;
-            
-            // Try to find the correct color property name
+            // Handle URP/Standard shader property names
             if (_swordMaterialInstance.HasProperty("_Color")) _colorPropertyName = "_Color";
             else if (_swordMaterialInstance.HasProperty("_BaseColor")) _colorPropertyName = "_BaseColor";
             else if (_swordMaterialInstance.HasProperty("_MainColor")) _colorPropertyName = "_MainColor";
             
-            // If we found a valid property, save the original color
             if (!string.IsNullOrEmpty(_colorPropertyName))
-            {
                 _originalSwordColor = _swordMaterialInstance.GetColor(_colorPropertyName);
-            }
-            else
-            {
-                Debug.LogWarning("Could not find a Color property on the sword shader. Red flash will be disabled.");
-            }
         }
 
         SwitchState(AIState.Idle);
@@ -144,15 +141,8 @@ public class SkeletonAI : Agent
     {
         if (_target == null || telemetrySystem == null)
         {
-            // FALLBACK BLOCK (Must match the total count below: 20 floats)
-            sensor.AddObservation(0f); // State
-            sensor.AddObservation(0f); // Dmg
-            sensor.AddObservation(0f); // Dist
-            sensor.AddObservation(Vector3.zero); // Facing (3)
-            sensor.AddObservation(Vector3.zero); // Dir (3)
-            
-            // Telemetry Fallbacks (11 floats)
-            for(int i=0; i<11; i++) sensor.AddObservation(0f);
+            // Fallback (20 floats total)
+            for(int i=0; i<20; i++) sensor.AddObservation(0f);
             return;
         }
 
@@ -167,39 +157,36 @@ public class SkeletonAI : Agent
         sensor.AddObservation((_target.position - transform.position).normalized);
 
         // 3. Telemetry Data (Player Modeling) (11 floats)
-        // Spatial
         sensor.AddObservation(telemetrySystem.PlayerEnemyDistance_Agent);
         sensor.AddObservation(telemetrySystem.PlayerEnemyDistanceChange_Agent);
-        
-        // Resources
         sensor.AddObservation(telemetrySystem.PlayerHealthPercentage_Agent);
         sensor.AddObservation(telemetrySystem.PlayerStaminaPercentage_Agent);
         sensor.AddObservation(telemetrySystem.StaminaUsageRate_Agent);
-
-        // Performance / Skill
         sensor.AddObservation(telemetrySystem.RecentDamageDealt_Agent);
         sensor.AddObservation(telemetrySystem.RecentDamageReceived_Agent);
         sensor.AddObservation(telemetrySystem.AttackSuccessRate_Agent);
         sensor.AddObservation(telemetrySystem.ParrySuccessRate_Agent);
         sensor.AddObservation(telemetrySystem.DodgeSuccessRate_Agent);
+        sensor.AddObservation((float)telemetrySystem.TotalAttacks_Agent);
         
-        // General Activity
-        sensor.AddObservation(telemetrySystem.TotalAttacks_Agent); // Or TotalAPM, depending on preference
+        // Note: Make sure Behavior Parameters Vector Observation Size is set to 20!
     }
 
     // --- ML-AGENTS: ACTIONS (The Brain's Decision) ---
     public override void OnActionReceived(ActionBuffers actions)
     {
         int decision = actions.DiscreteActions[0];
-        float distance = 0f;
-        if (_target != null) distance = Vector3.Distance(transform.position, _target.position);
+        
+        // --- Execute Logic based on Decision ---
+        // 0 = Circle/Wait
+        // 1..N = Attacks
+        // Last = Retreat
 
-        // --- Execute Logic based on ML Decision ---
         if (_currentState == AIState.Strategizing)
         {
             if (decision == 0)
             {
-                // Wait/Circle
+                // Keep Circling
             }
             else if (decision <= availableAttacks.Count)
             {
@@ -210,77 +197,132 @@ public class SkeletonAI : Agent
             }
             else
             {
-                // Retreat
+                // Force Retreat
                 SwitchState(AIState.Retreating);
             }
         }
 
-        // --- REWARD CALCULATION (MultiGAIL) ---
-        if (useMultiGAILReward && multiGAILManager != null)
+        // --- MultiGAIL Reward ---
+        if (useMultiGAILReward && multiGAILManager != null && _target != null)
         {
-            // Reconstruct observations list manually for the Critic
-            List<float> currentObs = new List<float>();
-            
-            // 1. Internal
-            currentObs.Add((float)_currentState);
-            currentObs.Add(canDealDamage ? 1f : 0f);
-            
-            // 2. Physical
-            currentObs.Add(distance);
-            currentObs.Add(transform.forward.x);
-            currentObs.Add(transform.forward.y);
-            currentObs.Add(transform.forward.z);
-            Vector3 dir = (_target.position - transform.position).normalized;
-            currentObs.Add(dir.x);
-            currentObs.Add(dir.y);
-            currentObs.Add(dir.z);
+            // Reconstruct the observation list for the Critic
+            // (In production, cache this list to avoid allocation)
+            float distance = Vector3.Distance(transform.position, _target.position);
+            List<float> currentObs = new List<float>
+            {
+                (float)_currentState,
+                canDealDamage ? 1f : 0f,
+                distance,
+                transform.forward.x, transform.forward.y, transform.forward.z,
+                (_target.position - transform.position).normalized.x,
+                (_target.position - transform.position).normalized.y,
+                (_target.position - transform.position).normalized.z,
+                telemetrySystem.PlayerEnemyDistance_Agent,
+                telemetrySystem.PlayerEnemyDistanceChange_Agent,
+                telemetrySystem.PlayerHealthPercentage_Agent,
+                telemetrySystem.PlayerStaminaPercentage_Agent,
+                telemetrySystem.StaminaUsageRate_Agent,
+                telemetrySystem.RecentDamageDealt_Agent,
+                telemetrySystem.RecentDamageReceived_Agent,
+                telemetrySystem.AttackSuccessRate_Agent,
+                telemetrySystem.ParrySuccessRate_Agent,
+                telemetrySystem.DodgeSuccessRate_Agent,
+                (float)telemetrySystem.TotalAttacks_Agent
+            };
 
-            // 3. Telemetry (Must match CollectObservations order)
-            currentObs.Add(telemetrySystem.PlayerEnemyDistance_Agent);
-            currentObs.Add(telemetrySystem.PlayerEnemyDistanceChange_Agent);
-            currentObs.Add(telemetrySystem.PlayerHealthPercentage_Agent);
-            currentObs.Add(telemetrySystem.PlayerStaminaPercentage_Agent);
-            currentObs.Add(telemetrySystem.StaminaUsageRate_Agent);
-            currentObs.Add(telemetrySystem.RecentDamageDealt_Agent);
-            currentObs.Add(telemetrySystem.RecentDamageReceived_Agent);
-            currentObs.Add(telemetrySystem.AttackSuccessRate_Agent);
-            currentObs.Add(telemetrySystem.ParrySuccessRate_Agent);
-            currentObs.Add(telemetrySystem.DodgeSuccessRate_Agent);
-            currentObs.Add((float)telemetrySystem.TotalAttacks_Agent);
-
-            // Calculate Style Reward
             float styleReward = multiGAILManager.CalculateStyleReward(currentObs, decision);
             AddReward(styleReward);
         }
     }
 
-    // --- ML-AGENTS: HEURISTIC (The "Old" Logic) ---
+    // --- ML-AGENTS: HEURISTIC (The Smart Teacher) ---
     public override void Heuristic(in ActionBuffers actionsOut)
     {
         var discreteActions = actionsOut.DiscreteActions;
         discreteActions[0] = 0; // Default: Wait
 
-        // Only make a decision if the timer is ready
+        // Only decide if timer is ready
         if (_currentState == AIState.Strategizing && _decisionTimer > currentPersona.decisionFrequency)
         {
-            // Logic 1: Panic Attack check
             float dist = 0f;
             if (_target) dist = Vector3.Distance(transform.position, _target.position);
             
+            // 1. Interrupt: Panic/Whiff Punish
             if (dist < 1.5f && Random.value < currentPersona.aggression)
             {
-                // Force Attack 0 (Basic Slash) -> In our mapping, this is Action 1
-                discreteActions[0] = 1;
+                discreteActions[0] = 1; // Force Basic Attack (Assumed Index 0 + 1)
                 return;
             }
 
-            // Logic 2: Standard Weighted Choice
-            EnemyAttack chosen = ChooseNextAttackStrategy_Heuristic();
-            int listIndex = availableAttacks.IndexOf(chosen);
-
-            // Map list index to Action Index (Action 0 is wait, so we add 1)
-            discreteActions[0] = listIndex + 1;
+            // 2. Utility-Based Choice (Smart Selection)
+            EnemyAttack bestMove = ChooseSmartAttack();
+            
+            if (bestMove != null)
+            {
+                int listIndex = availableAttacks.IndexOf(bestMove);
+                discreteActions[0] = listIndex + 1;
+            }
+            else
+            {
+                // Fallback or Retreat
+                discreteActions[0] = availableAttacks.Count + 1; // Retreat Index
+            }
         }
+    }
+
+    // --- UTILITY SYSTEM FOR HEURISTIC ---
+    EnemyAttack ChooseSmartAttack()
+    {
+        float currentDist = Vector3.Distance(transform.position, _target.position);
+        
+        EnemyAttack bestAttack = null;
+        float bestScore = -999f;
+
+        foreach (var attack in availableAttacks)
+        {
+            float score = CalculateAttackScore(attack, currentDist);
+            
+            // Add Noise to prevent robotic perfection
+            score += Random.Range(-5f, 5f); 
+
+            if (score > bestScore)
+            {
+                bestScore = score;
+                bestAttack = attack;
+            }
+        }
+        return bestAttack;
+    }
+
+    float CalculateAttackScore(EnemyAttack attack, float dist)
+    {
+        float score = 0f;
+
+        // 1. Range Scoring
+        float distDiff = Mathf.Abs(dist - attack.optimalRange);
+        if (distDiff <= attack.rangeTolerance) score += 50f;
+        else score -= distDiff * 2f; 
+
+        // 2. Context Scoring (Kiting vs Brawling)
+        if (dist > 5.0f && attack.optimalRange > 4.0f) score += 30f;
+        if (dist < 2.0f && attack.optimalRange < 2.5f) score += 20f;
+
+        // 3. Telemetry Reading (The "Intelligence")
+        if (telemetrySystem != null)
+        {
+            // Punish Low Stamina
+            if (telemetrySystem.PlayerStaminaPercentage_Agent < 0.3f && attack.windUpTime < 0.5f) 
+                score += 15f;
+
+            // Punish Parry Spam with Slow Attacks
+            if (telemetrySystem.ParrySuccessRate_Agent < 0.3f && telemetrySystem.TotalParries_Agent > 3)
+            {
+                if (attack.damageDuration > 0.5f) score += 20f;
+            }
+        }
+
+        score += attack.weight; // Designer bias
+        return score;
     }
 
     // --- UNITY UPDATE LOOP ---
@@ -292,14 +334,28 @@ public class SkeletonAI : Agent
         if (_isActionLocked) return;
 
         float distance = Vector3.Distance(transform.position, _target.position);
-        DecideStrategy(distance);
+
+        // 1. BRAIN
+        if (_currentState == AIState.Strategizing)
+        {
+            _decisionTimer += Time.deltaTime;
+            // Ask for a decision every frame while strategizing
+            RequestDecision();
+        }
+        else
+        {
+            // For other states (Maneuvering, Retreating), run internal logic
+            ManageActiveState(distance);
+        }
+
+        // 2. BODY
         ExecuteStateMovement(distance);
 
         if (_currentState != AIState.Stunned) FaceTarget();
     }
 
-    // --- THE BRAIN ---
-    void DecideStrategy(float dist)
+    // --- LOGIC: State Management ---
+    void ManageActiveState(float dist)
     {
         switch (_currentState)
         {
@@ -307,27 +363,12 @@ public class SkeletonAI : Agent
                 if (dist < sensorRadius) SwitchState(AIState.Strategizing);
                 break;
 
-            case AIState.Strategizing:
-                _decisionTimer += Time.deltaTime;
-                if (dist < 1.5f && Random.value < currentPersona.aggression)
-                {
-                    _plannedAttack = availableAttacks[0]; 
-                    StartCoroutine(ExecuteAttackRoutine());
-                    return;
-                }
-
-                if (_decisionTimer > currentPersona.decisionFrequency)
-                {
-                    _plannedAttack = ChooseNextAttackStrategy();
-                    SwitchState(AIState.Maneuvering);
-                }
-                break;
-
             case AIState.Maneuvering:
                 if (IsPositionedForPlan(dist))
                 {
                     StartCoroutine(ExecuteAttackRoutine());
                 }
+                // Failsafe
                 _decisionTimer += Time.deltaTime;
                 if (_decisionTimer > 5.0f)
                 {
@@ -340,13 +381,16 @@ public class SkeletonAI : Agent
                 if (_retreatType == 0) // Bait
                 {
                     if (dist < 2.0f) { StartCoroutine(ExecuteAttackRoutine()); return; }
-                    if (dist < 2.0f) { StartCoroutine(ExecuteAttackRoutine()); return; }
                     if (dist > currentPersona.preferredCombatRange) SwitchState(AIState.Strategizing);
                 }
                 else if (_retreatType == 1) // Reset
                 {
                     if (dist > 7.0f) SwitchState(AIState.Strategizing);
                 }
+                
+                // Panic check for stuck retreating
+                if (_decisionTimer > 3.0f) StartCoroutine(ExecuteAttackRoutine());
+                _decisionTimer += Time.deltaTime;
                 break;
         }
     }
@@ -403,6 +447,9 @@ public class SkeletonAI : Agent
         
         _currentExecutingAttack = _plannedAttack ?? availableAttacks[0];
         
+        // Log Attempt Telemetry
+        OnEnemyAttackAttempt?.Invoke(_currentExecutingAttack.name);
+
         _animator.SetInteger(AttackIndex, _currentExecutingAttack.animationIndex);
         _animator.SetTrigger(TriggerAttack);
 
@@ -410,22 +457,25 @@ public class SkeletonAI : Agent
         float currentDamageWindow = _currentExecutingAttack.damageDuration;
         float currentTotalDuration = _currentExecutingAttack.totalDuration;
 
+        // Windup Phase
         float timer = 0f;
         while (timer < currentWindUp) 
         {
             if (_currentExecutingAttack.tracksPlayerDuringWindup) FaceTarget();
             timer += Time.deltaTime;
             yield return null;
-            yield return null;
         }
 
+        // Damage Phase
         canDealDamage = true;
         yield return new WaitForSeconds(currentDamageWindow);
         canDealDamage = false;
 
+        // Recovery Phase
         float remaining = currentTotalDuration - currentWindUp - currentDamageWindow;
         if (remaining > 0) yield return new WaitForSeconds(remaining);
 
+        // Post-Attack Decision
         if (Random.value < currentPersona.fear)
         {
             _retreatType = 1; 
@@ -442,7 +492,6 @@ public class SkeletonAI : Agent
         _decisionTimer = 0;
     }
 
-
     // --- PARRY LOGIC ---
     public void GetParried()
     {
@@ -451,6 +500,7 @@ public class SkeletonAI : Agent
         _agent.isStopped = true;
         canDealDamage = false;
         SwitchState(AIState.Stunned);
+        OnParrySuccess?.Invoke(); // Trigger Static Event
         StartCoroutine(ParryReboundRoutine());
     }
 
@@ -468,36 +518,21 @@ public class SkeletonAI : Agent
         _isActionLocked = false;
     }
 
-    // --- HELPERS ---
-    void UpdateDebugVisuals()
+    // --- HIT REGISTRATION ---
+    public void RegisterHit()
     {
-        // Safe check: If we never found a valid color property, do nothing.
-        if (_swordMaterialInstance == null || string.IsNullOrEmpty(_colorPropertyName)) return;
-
-        if (canDealDamage)
+        if (_currentExecutingAttack != null)
         {
-            _swordMaterialInstance.SetColor(_colorPropertyName, Color.red);
-        }
-        else
-        {
-            _swordMaterialInstance.SetColor(_colorPropertyName, _originalSwordColor);
+            OnEnemyAttackSuccess?.Invoke(_currentExecutingAttack.name);
         }
     }
 
-    EnemyAttack ChooseNextAttackStrategy()
+    // --- HELPERS ---
+    
+    // Default fallback if logic fails
+    EnemyAttack ChooseRandomAttack()
     {
-        float totalWeight = 0;
-        foreach (var atk in availableAttacks) totalWeight += atk.weight;
-
-        float randomValue = Random.Range(0, totalWeight);
-        float cursor = 0;
-
-        foreach (var atk in availableAttacks)
-        {
-            cursor += atk.weight;
-            if (cursor >= randomValue) return atk;
-        }
-        return availableAttacks[0];
+        return availableAttacks[Random.Range(0, availableAttacks.Count)];
     }
 
     bool IsPositionedForPlan(float dist)
@@ -532,9 +567,7 @@ public class SkeletonAI : Agent
         if (_currentState == newState) return;
         _currentState = newState;
         _decisionTimer = 0; 
-        
-        if (newState == AIState.Retreating)
-            _retreatType = (Random.value > 0.5f) ? 0 : 1; 
+        if (newState == AIState.Retreating) _retreatType = (Random.value > 0.5f) ? 0 : 1; 
     }
 
     void UpdateAnim(float x, float z)
@@ -550,6 +583,12 @@ public class SkeletonAI : Agent
         if (dir != Vector3.zero) transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(dir), Time.deltaTime * 10f);
     }
 
+    void UpdateDebugVisuals()
+    {
+        if (_swordMaterialInstance == null || string.IsNullOrEmpty(_colorPropertyName)) return;
+        _swordMaterialInstance.SetColor(_colorPropertyName, canDealDamage ? Color.red : _originalSwordColor);
+    }
+
     void OnDrawGizmos()
     {
         if (!showDebugGizmos) return;
@@ -557,15 +596,7 @@ public class SkeletonAI : Agent
         if (_currentExecutingAttack != null && _currentExecutingAttack.useFootHitbox) activeBone = footBone;
         if (activeBone == null) return;
 
-        if (canDealDamage)
-        {
-            Gizmos.color = new Color(1, 0, 0, 0.5f); 
-            Gizmos.DrawSphere(activeBone.position, hitRadius);
-        }
-        else
-        {
-            Gizmos.color = Color.yellow;
-            Gizmos.DrawWireSphere(activeBone.position, hitRadius);
-        }
+        Gizmos.color = canDealDamage ? new Color(1, 0, 0, 0.5f) : Color.yellow;
+        Gizmos.DrawWireSphere(activeBone.position, hitRadius);
     }
 }
