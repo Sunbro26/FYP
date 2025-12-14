@@ -2816,8 +2816,8 @@ MonoBehaviour:
     hasUpgradedBrainParametersWithActionSpec: 1
   m_Model: {fileID: 0}
   m_InferenceDevice: 0
-  m_BehaviorType: 1
-  m_BehaviorName: Passive
+  m_BehaviorType: 0
+  m_BehaviorName: SkeletonAI
   TeamId: 0
   m_UseChildSensors: 1
   m_UseChildActuators: 1
@@ -2838,7 +2838,7 @@ MonoBehaviour:
   Record: 1
   NumStepsToRecord: 5000
   DemonstrationName: Aggressive
-  DemonstrationDirectory: ../TrainingData
+  DemonstrationDirectory: ../config
 --- !u!1001 &391245703
 PrefabInstance:
   m_ObjectHideFlags: 0
