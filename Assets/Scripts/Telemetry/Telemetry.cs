@@ -1,5 +1,7 @@
 using UnityEngine;
 using System.Collections.Generic;
+using System.Linq;
+using System;
 
 /// <summary>
 /// Expanded Telemetry system.
@@ -17,22 +19,21 @@ public class Telemetry : MonoBehaviour
     [SerializeField] private Transform playerTransform;
     [Tooltip("The Transform of the enemy agent.")]
     [SerializeField] private Transform enemyTransform;
-    private SkeletonAI enemyAI;
     
-    private CharacterStats PlayerStats; // REPLACE with your actual Stats script type
-    private CharacterStats EnemyStats; // REPLACE with your actual Stats script type
+    private SkeletonAI enemyAI;
+    private CharacterStats PlayerStats; 
+    private CharacterStats EnemyStats; 
 
-    // --- SECTION 2: Public Properties for ML-Agent (Observation Vector) ---
-    // These are updated every frame.
+    // --- SECTION 2: Public Properties for ML-Agent ---
 
     [Header("Spatial Metrics")]
     public float PlayerEnemyDistance_Agent { get; private set; }
-    public float PlayerEnemyDistanceChange_Agent { get; private set; } // + = Retreating, - = Closing
+    public float PlayerEnemyDistanceChange_Agent { get; private set; } 
 
     [Header("Resource Metrics")]
     public float PlayerHealthPercentage_Agent { get; private set; }
     public float PlayerStaminaPercentage_Agent { get; private set; }
-    public float StaminaUsageRate_Agent { get; private set; } // Stamina used per second
+    public float StaminaUsageRate_Agent { get; private set; } 
 
     [Header("Combat Efficiency Metrics")]
     public float RecentDamageDealt_Agent { get; private set; }
@@ -42,36 +43,36 @@ public class Telemetry : MonoBehaviour
     public float AttackSuccessRate_Agent { get; private set; }
     public float ParrySuccessRate_Agent { get; private set; }
     public float DodgeSuccessRate_Agent { get; private set; }
+    public float BlockSuccessRate_Agent { get; private set; } // NEW
 
     [Header("Action Counts (Absolute)")]
     public int TotalAttacks_Agent { get; private set; }
     public int TotalParries_Agent { get; private set; }
     public int TotalDodges_Agent { get; private set; }
+    public int TotalBlocks_Agent { get; private set; } // NEW
 
-// Store counts for each attack name
+    // Enemy Attack Tracking
     private Dictionary<string, int> _enemyAttackAttempts = new Dictionary<string, int>();
     private Dictionary<string, int> _enemyAttackSuccesses = new Dictionary<string, int>();
-    
 
     // --- SECTION 3: Internal State Management ---
 
-    // Rolling Windows (for calculating rates over the last X seconds)
-    private float _historyWindow = 10f; // Look back 10 seconds for "Recent" metrics
+    private float _historyWindow = 10f; 
 
-    // Event Timestamp Lists (To calculate frequency/rates)
+    // Event Lists
     private List<float> _attackAttempts = new List<float>();
     private List<float> _attackSuccesses = new List<float>();
     private List<float> _parryAttempts = new List<float>();
     private List<float> _parrySuccesses = new List<float>();
     private List<float> _dodgeAttempts = new List<float>();
     private List<float> _dodgeSuccesses = new List<float>();
+    private List<float> _blockSuccesses = new List<float>(); // NEW (Successful blocks only)
     
-    // Damage Accumulators
+    // Accumulators
     private List<KeyValuePair<float, float>> _damageDealtHistory = new List<KeyValuePair<float, float>>();
     private List<KeyValuePair<float, float>> _damageReceivedHistory = new List<KeyValuePair<float, float>>();
     private List<KeyValuePair<float, float>> _staminaUsedHistory = new List<KeyValuePair<float, float>>();
 
-    // State for Calculations
     private Vector3 _lastPlayerPosition_ForAgent;
     private float _lastDistanceToEnemy_ForAgent;
     private float _lastStamina;
@@ -84,42 +85,68 @@ public class Telemetry : MonoBehaviour
         enemyAI = enemyTransform != null ? enemyTransform.GetComponent<SkeletonAI>() : null;
         PlayerStats = playerTransform != null ? playerTransform.GetComponent<CharacterStats>() : null;
         EnemyStats = enemyTransform != null ? enemyTransform.GetComponent<CharacterStats>() : null;
+        
+        // Attacks (Assuming PlayerAttack has these events)
+        // PlayerAttack.OnPlayerAttack += HandleAttackAttempt;
+        // PlayerAttack.OnPlayerHitEnemy += HandleAttackSuccess;
 
         PlayerParry.OnParryAttempt += HandleParryAttempt;
-        SkeletonAI.OnParrySuccess += HandleParrySuccess; // static reference as refers to player parry success
+        SkeletonAI.OnParrySuccess += HandleParrySuccess;
 
         PlayerDodge.OnDodgeAttempt += HandleDodgeAttempt;
         PlayerDodge.OnDodgeSuccess += HandleDodgeSuccess;
 
-        PlayerStats.OnTakeDamage += HandleDamageReceived;
-        EnemyStats.OnTakeDamage += HandleDamageDealt;
+        PlayerControl.OnBlockSuccess += HandleBlockSuccess; // NEW
 
-        enemyAI.OnEnemyAttackAttempt += HandleEnemyAttackAttempt; // non-static reference as refers to individual enemy damage
-        enemyAI.OnEnemyAttackSuccess += HandleEnemyAttackSuccess;
+        if (PlayerStats) PlayerStats.OnTakeDamage += HandleDamageReceived;
+        if (EnemyStats) EnemyStats.OnTakeDamage += HandleDamageDealt;
+
+        if (enemyAI)
+        {
+            enemyAI.OnEnemyAttackAttempt += HandleEnemyAttackAttempt;
+            enemyAI.OnEnemyAttackSuccess += HandleEnemyAttackSuccess;
+        }
     }
 
     void OnDisable()
     {
-        // PlayerAttack.OnPlayerAttack -= HandleAttackAttempt;
-        // ... (Unsubscribe from all)
+        // Unsubscribe to prevent memory leaks!
+        PlayerParry.OnParryAttempt -= HandleParryAttempt;
+        SkeletonAI.OnParrySuccess -= HandleParrySuccess;
+        PlayerDodge.OnDodgeAttempt -= HandleDodgeAttempt;
+        PlayerDodge.OnDodgeSuccess -= HandleDodgeSuccess;
+        PlayerControl.OnBlockSuccess -= HandleBlockSuccess;
+        
+        if (PlayerStats) PlayerStats.OnTakeDamage -= HandleDamageReceived;
+        if (EnemyStats) EnemyStats.OnTakeDamage -= HandleDamageDealt;
+        if (enemyAI)
+        {
+            enemyAI.OnEnemyAttackAttempt -= HandleEnemyAttackAttempt;
+            enemyAI.OnEnemyAttackSuccess -= HandleEnemyAttackSuccess;
+        }
     }
 
     void Start()
     {
+        if (playerTransform == null || enemyTransform == null)
+        {
+            Debug.LogError("Telemetry: Missing Transforms!", this);
+            return;
+        }
+        
         _lastPlayerPosition_ForAgent = playerTransform.position;
         _lastDistanceToEnemy_ForAgent = Vector3.Distance(playerTransform.position, enemyTransform.position);
-        _lastStamina = PlayerStats.currentStamina;
+        
+        if (PlayerStats) _lastStamina = PlayerStats.currentStamina;
         _logTimer = logInterval;
     }
 
     void Update()
     {
-        // 1. Process High-Frequency Data
         UpdateSpatialMetrics();
         UpdateResourceMetrics();
         UpdateCombatRates();
 
-        // 2. Periodic Console Log (Optional Debugging)
         _logTimer -= Time.deltaTime;
         if (_logTimer <= 0f)
         {
@@ -144,11 +171,11 @@ public class Telemetry : MonoBehaviour
 
     private void UpdateResourceMetrics()
     {
-        // 1. Health & Stamina %
+        if (PlayerStats == null) return;
+
         PlayerHealthPercentage_Agent = (float)PlayerStats.currentHealth / PlayerStats.maxHealth;
         PlayerStaminaPercentage_Agent = PlayerStats.currentStamina / PlayerStats.maxStamina;
 
-        // 2. Track Stamina Usage (If stamina went down, log usage)
         if (PlayerStats.currentStamina < _lastStamina)
         {
             float used = _lastStamina - PlayerStats.currentStamina;
@@ -156,7 +183,6 @@ public class Telemetry : MonoBehaviour
         }
         _lastStamina = PlayerStats.currentStamina;
 
-        // 3. Calculate Usage Rate (Units per second over history window)
         StaminaUsageRate_Agent = CalculateAccumulatedValue(_staminaUsedHistory);
     }
 
@@ -169,6 +195,7 @@ public class Telemetry : MonoBehaviour
         CleanupList(_parrySuccesses);
         CleanupList(_dodgeAttempts);
         CleanupList(_dodgeSuccesses);
+        CleanupList(_blockSuccesses); // NEW
         CleanupKVPList(_damageDealtHistory);
         CleanupKVPList(_damageReceivedHistory);
         CleanupKVPList(_staminaUsedHistory);
@@ -177,11 +204,18 @@ public class Telemetry : MonoBehaviour
         TotalAttacks_Agent = _attackAttempts.Count;
         TotalParries_Agent = _parryAttempts.Count;
         TotalDodges_Agent = _dodgeAttempts.Count;
+        TotalBlocks_Agent = _blockSuccesses.Count; // Total SUCCESSFUL blocks
 
-        // Update Success Ratios (Safety check for divide by zero)
+        // Update Success Ratios
         AttackSuccessRate_Agent = TotalAttacks_Agent > 0 ? (float)_attackSuccesses.Count / TotalAttacks_Agent : 0f;
         ParrySuccessRate_Agent = TotalParries_Agent > 0 ? (float)_parrySuccesses.Count / TotalParries_Agent : 0f;
         DodgeSuccessRate_Agent = TotalDodges_Agent > 0 ? (float)_dodgeSuccesses.Count / TotalDodges_Agent : 0f;
+        
+        // For Block Rate, since we don't count "Block Attempts" (holding button), 
+        // we can measure it as "Blocks / (Blocks + DamageTaken Events)".
+        // This estimates: "Of all the times I got hit, how many did I block?"
+        int totalDefenseEvents = TotalBlocks_Agent + _damageReceivedHistory.Count;
+        BlockSuccessRate_Agent = totalDefenseEvents > 0 ? (float)TotalBlocks_Agent / totalDefenseEvents : 0f;
 
         // Update Damage Totals
         RecentDamageDealt_Agent = CalculateAccumulatedValue(_damageDealtHistory);
@@ -209,21 +243,20 @@ public class Telemetry : MonoBehaviour
         return total;
     }
 
-    // --- SECTION 6: Event Handlers (Call these from your other scripts) ---
+    // --- SECTION 6: Event Handlers ---
 
-    // Attacks
     public void HandleAttackAttempt() { _attackAttempts.Add(Time.time); }
     public void HandleAttackSuccess() { _attackSuccesses.Add(Time.time); }
 
-    // Parries
     public void HandleParryAttempt() { _parryAttempts.Add(Time.time); }
     public void HandleParrySuccess() { _parrySuccesses.Add(Time.time); }
 
-    // Dodges
     public void HandleDodgeAttempt() { _dodgeAttempts.Add(Time.time); }
     public void HandleDodgeSuccess() { _dodgeSuccesses.Add(Time.time); }
 
-    // Damage (Pass the amount of damage taken/dealt)
+    // NEW: Handle Block
+    public void HandleBlockSuccess() { _blockSuccesses.Add(Time.time); }
+
     public void HandleDamageDealt(int amount) 
     { 
         _damageDealtHistory.Add(new KeyValuePair<float, float>(Time.time, amount)); 
@@ -233,7 +266,7 @@ public class Telemetry : MonoBehaviour
         _damageReceivedHistory.Add(new KeyValuePair<float, float>(Time.time, amount)); 
     }
 
-private void HandleEnemyAttackAttempt(string attackName)
+    private void HandleEnemyAttackAttempt(string attackName)
     {
         if (!_enemyAttackAttempts.ContainsKey(attackName)) _enemyAttackAttempts[attackName] = 0;
         _enemyAttackAttempts[attackName]++;
@@ -245,7 +278,6 @@ private void HandleEnemyAttackAttempt(string attackName)
         _enemyAttackSuccesses[attackName]++;
     }
 
-// Helper to get success rate for a specific attack
     public float GetEnemyAttackSuccessRate(string attackName)
     {
         if (_enemyAttackAttempts.TryGetValue(attackName, out int attempts) && attempts > 0)
@@ -262,8 +294,9 @@ private void HandleEnemyAttackAttempt(string attackName)
     {
         Debug.Log($"--- Telemetry Update ---");
         Debug.Log($"Health: {PlayerHealthPercentage_Agent:P0} | Stamina: {PlayerStaminaPercentage_Agent:P0}");
-        Debug.Log($"Parry Efficiency: {ParrySuccessRate_Agent:P0} ({_parrySuccesses.Count}/{TotalParries_Agent})");
-        Debug.Log($"Dodge Efficiency: {DodgeSuccessRate_Agent:P0} ({_dodgeSuccesses.Count}/{TotalDodges_Agent})");
+        Debug.Log($"Block Rate: {BlockSuccessRate_Agent:P0} ({TotalBlocks_Agent} Blocks)");
+        Debug.Log($"Parry Rate: {ParrySuccessRate_Agent:P0}");
+        Debug.Log($"Dodge Rate: {DodgeSuccessRate_Agent:P0}");
         Debug.Log($"Recent Damage: Dealt {RecentDamageDealt_Agent} / Taken {RecentDamageReceived_Agent}");
         Debug.Log($"------------------------");
     }

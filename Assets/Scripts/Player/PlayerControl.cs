@@ -1,4 +1,5 @@
 using UnityEngine;
+using System;
 
 public class PlayerControl : MonoBehaviour
 {
@@ -16,6 +17,8 @@ public class PlayerControl : MonoBehaviour
     private CharacterStats _stats;
     private PlayerBlock _blockScript;
     private PlayerDodge _dodgeScript;
+
+    public static event Action OnBlockSuccess;
 
     void Start()
     {
@@ -87,6 +90,7 @@ private void OnTriggerEnter(Collider other)
             // 5. Outcome Logic
             if (isBlockingSuccessfully)
             {
+                OnBlockSuccess?.Invoke(); 
                 // Spawn Particles
                 if (blockSparksPrefab != null && blockEffectSpawnPoint != null)
                 {
@@ -99,7 +103,7 @@ private void OnTriggerEnter(Collider other)
                 enemyScript.canDealDamage = false; 
                 return; 
             }
-            
+
             else
             {
                 // TAKE DAMAGE via CharacterStats
