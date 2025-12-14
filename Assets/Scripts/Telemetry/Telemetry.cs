@@ -85,9 +85,6 @@ public class Telemetry : MonoBehaviour
         PlayerStats = playerTransform != null ? playerTransform.GetComponent<CharacterStats>() : null;
         EnemyStats = enemyTransform != null ? enemyTransform.GetComponent<CharacterStats>() : null;
 
-        // PlayerAttack.OnPlayerAttack += HandleAttackAttempt;
-        // PlayerAttack.OnPlayerHitEnemy += HandleAttackSuccess;
-
         PlayerParry.OnParryAttempt += HandleParryAttempt;
         SkeletonAI.OnParrySuccess += HandleParrySuccess; // static reference as refers to player parry success
 

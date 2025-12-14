@@ -60,22 +60,46 @@ private void OnTriggerEnter(Collider other)
                 }
             }
 
-            // --- 4. BLOCK CHECK ---
+// --- 4. DIRECTIONAL BLOCK CHECK ---
             bool isBlockingSuccessfully = false;
-            // ... (Block logic remains the same) ...
+
             if (_blockScript != null && _blockScript.IsBlocking)
             {
-                 // ... logic ...
-                 if (_stats.UseStamina(staminaCostPerBlock)) isBlockingSuccessfully = true;
+                Vector3 directionToEnemy = (enemyScript.transform.position - transform.position).normalized;
+                float angle = Vector3.Angle(transform.forward, directionToEnemy);
+
+                // Check angle AND if we have enough stamina to block
+                if (angle <= blockAngle / 2)
+                {
+                    // Try to consume stamina for the block
+                    if (_stats.UseStamina(staminaCostPerBlock))
+                    {
+                        isBlockingSuccessfully = true;
+                    }
+                    else
+                    {
+                        Debug.Log("Not enough stamina to block!");
+                        // Guard break logic could go here
+                    }
+                }
             }
 
             // 5. Outcome Logic
             if (isBlockingSuccessfully)
             {
-                // ... (Sparks logic) ...
+                // Spawn Particles
+                if (blockSparksPrefab != null && blockEffectSpawnPoint != null)
+                {
+                    Vector3 directionToEnemy = (enemyScript.transform.position - transform.position).normalized;
+                    Quaternion sparkRotation = Quaternion.LookRotation(directionToEnemy);
+                    GameObject sparks = Instantiate(blockSparksPrefab, blockEffectSpawnPoint.position, sparkRotation);
+                    Destroy(sparks, 1.0f);
+                }
+
                 enemyScript.canDealDamage = false; 
                 return; 
             }
+            
             else
             {
                 // TAKE DAMAGE via CharacterStats
@@ -83,10 +107,6 @@ private void OnTriggerEnter(Collider other)
                 {
                     _stats.TakeDamage(10);
                 }
-
-                // --- UPDATE 2: THE CRITICAL FIX ---
-                // Tell the Enemy AI that its current attack was a success!
-                // This fires the OnEnemyAttackSuccess event for the ML Model.
                 enemyScript.RegisterHit(); 
                 
                 enemyScript.canDealDamage = false;
