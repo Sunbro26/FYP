@@ -81,8 +81,10 @@ public class Telemetry : MonoBehaviour
 
     void OnEnable()
     {
-        // --- TODO: UNCOMMENT AND LINK THESE TO YOUR ACTUAL EVENTS ---
-        
+        enemyAI = enemyTransform != null ? enemyTransform.GetComponent<SkeletonAI>() : null;
+        PlayerStats = playerTransform != null ? playerTransform.GetComponent<CharacterStats>() : null;
+        EnemyStats = enemyTransform != null ? enemyTransform.GetComponent<CharacterStats>() : null;
+
         // PlayerAttack.OnPlayerAttack += HandleAttackAttempt;
         // PlayerAttack.OnPlayerHitEnemy += HandleAttackSuccess;
 
@@ -107,17 +109,6 @@ public class Telemetry : MonoBehaviour
 
     void Start()
     {
-        if (playerTransform == null || enemyTransform == null || PlayerStats == null)
-        {
-            enemyAI = enemyTransform != null ? enemyTransform.GetComponent<SkeletonAI>() : null;
-            PlayerStats = playerTransform != null ? playerTransform.GetComponent<CharacterStats>() : null;
-            
-            Debug.LogError("Telemetry: Missing References! Assign Player, Enemy, and Stats script.", this);
-            
-            enabled = false;
-            return;
-        }
-
         _lastPlayerPosition_ForAgent = playerTransform.position;
         _lastDistanceToEnemy_ForAgent = Vector3.Distance(playerTransform.position, enemyTransform.position);
         _lastStamina = PlayerStats.currentStamina;

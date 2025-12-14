@@ -100,8 +100,6 @@ public class SkeletonAI : Agent
 
     public static event Action OnParrySuccess;
 
-    public event Action<int> OnDamageDealt;
-
     // New Events for Telemetry
     public event Action<string> OnEnemyAttackAttempt; 
     public event Action<string> OnEnemyAttackSuccess;
@@ -558,5 +556,5 @@ public class SkeletonAI : Agent
             OnEnemyAttackSuccess?.Invoke(_currentExecutingAttack.name);
         }
     }
-    
+
 }
