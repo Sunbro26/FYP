@@ -23,8 +23,7 @@ public class PlayerControl : MonoBehaviour
         _blockScript = GetComponent<PlayerBlock>();
         _dodgeScript = GetComponent<PlayerDodge>();
     }
-
-    private void OnTriggerEnter(Collider other)
+private void OnTriggerEnter(Collider other)
     {
         if (other.gameObject.CompareTag("sword"))
         {
@@ -34,69 +33,46 @@ public class PlayerControl : MonoBehaviour
 
             // 2. Check for I-Frames (Dodge)
             PlayerDodge dodgeScript = GetComponent<PlayerDodge>();
-            if (dodgeScript != null && dodgeScript.IsInvincible) return;
+            if (dodgeScript != null && dodgeScript.IsInvincible) 
+            {
+                // --- UPDATE 1: Tell Telemetry this was a successful dodge! ---
+                dodgeScript.RegisterPerfectDodge(); 
+                return;
+            }
 
-            // --- 3. NEW PARRY CHECK ---
+            // --- 3. PARRY CHECK ---
             PlayerParry parryScript = GetComponent<PlayerParry>();
             if (parryScript != null && parryScript.IsParryWindowActive)
             {
-                // Check Direction (Can usually only parry attacks from the front)
                 Vector3 directionToEnemy = (enemyScript.transform.position - transform.position).normalized;
                 float angle = Vector3.Angle(transform.forward, directionToEnemy);
 
-                if (angle <= 60f) // 60 degree cone for parrying
+                if (angle <= 60f) 
                 {
                     Debug.Log("SUCCESSFUL PARRY!");
+                    enemyScript.GetParried(); // Telemetry listens to the event inside here (if added)
                     
-                    // Trigger the enemy rebound
-                    enemyScript.GetParried();
-
-                    // Spawn a spark effect (reuse the block sparks)
                     if (blockSparksPrefab != null)
                     {
                         Instantiate(blockSparksPrefab, blockEffectSpawnPoint.position, Quaternion.identity);
                     }
-                    
-                    return; // Exit completely
+                    return; 
                 }
             }
 
-            // --- 4. DIRECTIONAL BLOCK CHECK ---
+            // --- 4. BLOCK CHECK ---
             bool isBlockingSuccessfully = false;
-
+            // ... (Block logic remains the same) ...
             if (_blockScript != null && _blockScript.IsBlocking)
             {
-                Vector3 directionToEnemy = (enemyScript.transform.position - transform.position).normalized;
-                float angle = Vector3.Angle(transform.forward, directionToEnemy);
-
-                // Check angle AND if we have enough stamina to block
-                if (angle <= blockAngle / 2)
-                {
-                    // Try to consume stamina for the block
-                    if (_stats.UseStamina(staminaCostPerBlock))
-                    {
-                        isBlockingSuccessfully = true;
-                    }
-                    else
-                    {
-                        Debug.Log("Not enough stamina to block!");
-                        // Guard break logic could go here
-                    }
-                }
+                 // ... logic ...
+                 if (_stats.UseStamina(staminaCostPerBlock)) isBlockingSuccessfully = true;
             }
 
             // 5. Outcome Logic
             if (isBlockingSuccessfully)
             {
-                // Spawn Particles
-                if (blockSparksPrefab != null && blockEffectSpawnPoint != null)
-                {
-                    Vector3 directionToEnemy = (enemyScript.transform.position - transform.position).normalized;
-                    Quaternion sparkRotation = Quaternion.LookRotation(directionToEnemy);
-                    GameObject sparks = Instantiate(blockSparksPrefab, blockEffectSpawnPoint.position, sparkRotation);
-                    Destroy(sparks, 1.0f);
-                }
-
+                // ... (Sparks logic) ...
                 enemyScript.canDealDamage = false; 
                 return; 
             }
@@ -107,6 +83,11 @@ public class PlayerControl : MonoBehaviour
                 {
                     _stats.TakeDamage(10);
                 }
+
+                // --- UPDATE 2: THE CRITICAL FIX ---
+                // Tell the Enemy AI that its current attack was a success!
+                // This fires the OnEnemyAttackSuccess event for the ML Model.
+                enemyScript.RegisterHit(); 
                 
                 enemyScript.canDealDamage = false;
             }

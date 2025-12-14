@@ -1,7 +1,5 @@
 using UnityEngine;
 using System.Collections.Generic;
-using System.Linq;
-using System;
 
 /// <summary>
 /// Expanded Telemetry system.
@@ -19,10 +17,11 @@ public class Telemetry : MonoBehaviour
     [SerializeField] private Transform playerTransform;
     [Tooltip("The Transform of the enemy agent.")]
     [SerializeField] private Transform enemyTransform;
+    private SkeletonAI enemyAI;
     
     [Header("Script References")]
     [Tooltip("Reference to the Player's Health/Stamina script.")]
-    [SerializeField] private CharacterStats playerStats; // REPLACE with your actual Stats script type
+    [SerializeField] private CharacterStats PlayerStats; // REPLACE with your actual Stats script type
 
     // --- SECTION 2: Public Properties for ML-Agent (Observation Vector) ---
     // These are updated every frame.
@@ -49,6 +48,11 @@ public class Telemetry : MonoBehaviour
     public int TotalAttacks_Agent { get; private set; }
     public int TotalParries_Agent { get; private set; }
     public int TotalDodges_Agent { get; private set; }
+
+// Store counts for each attack name
+    private Dictionary<string, int> _enemyAttackAttempts = new Dictionary<string, int>();
+    private Dictionary<string, int> _enemyAttackSuccesses = new Dictionary<string, int>();
+    
 
     // --- SECTION 3: Internal State Management ---
 
@@ -84,13 +88,16 @@ public class Telemetry : MonoBehaviour
         // PlayerAttack.OnPlayerHitEnemy += HandleAttackSuccess;
 
         PlayerParry.OnParryAttempt += HandleParryAttempt;
-        SkeletonAI.OnParrySuccess += HandleParrySuccess;
+        SkeletonAI.OnParrySuccess += HandleParrySuccess; // static reference as refers to player parry success
 
-        // PlayerDodge.OnDodge += HandleDodgeAttempt;
-        // PlayerDodge.OnPerfectDodge += HandleDodgeSuccess;
+        PlayerDodge.OnDodgeAttempt += HandleDodgeAttempt;
+        PlayerDodge.OnDodgeSuccess += HandleDodgeSuccess;
 
-        // PlayerStats.OnTakeDamage += HandleDamageReceived;
+        PlayerStats.OnTakeDamage += HandleDamageReceived;
         // EnemyStats.OnTakeDamage += HandleDamageDealt;
+
+        enemyAI.OnEnemyAttackAttempt += HandleEnemyAttackAttempt; // non-static reference as refers to individual enemy damage
+        enemyAI.OnEnemyAttackSuccess += HandleEnemyAttackSuccess;
     }
 
     void OnDisable()
@@ -101,8 +108,9 @@ public class Telemetry : MonoBehaviour
 
     void Start()
     {
-        if (playerTransform == null || enemyTransform == null || playerStats == null)
+        if (playerTransform == null || enemyTransform == null || PlayerStats == null)
         {
+            enemyAI = enemyTransform != null ? enemyTransform.GetComponent<SkeletonAI>() : null;
             Debug.LogError("Telemetry: Missing References! Assign Player, Enemy, and Stats script.", this);
             this.enabled = false;
             return;
@@ -110,7 +118,7 @@ public class Telemetry : MonoBehaviour
 
         _lastPlayerPosition_ForAgent = playerTransform.position;
         _lastDistanceToEnemy_ForAgent = Vector3.Distance(playerTransform.position, enemyTransform.position);
-        _lastStamina = playerStats.currentStamina;
+        _lastStamina = PlayerStats.currentStamina;
         _logTimer = logInterval;
     }
 
@@ -147,16 +155,16 @@ public class Telemetry : MonoBehaviour
     private void UpdateResourceMetrics()
     {
         // 1. Health & Stamina %
-        PlayerHealthPercentage_Agent = (float)playerStats.currentHealth / playerStats.maxHealth;
-        PlayerStaminaPercentage_Agent = playerStats.currentStamina / playerStats.maxStamina;
+        PlayerHealthPercentage_Agent = (float)PlayerStats.currentHealth / PlayerStats.maxHealth;
+        PlayerStaminaPercentage_Agent = PlayerStats.currentStamina / PlayerStats.maxStamina;
 
         // 2. Track Stamina Usage (If stamina went down, log usage)
-        if (playerStats.currentStamina < _lastStamina)
+        if (PlayerStats.currentStamina < _lastStamina)
         {
-            float used = _lastStamina - playerStats.currentStamina;
+            float used = _lastStamina - PlayerStats.currentStamina;
             _staminaUsedHistory.Add(new KeyValuePair<float, float>(Time.time, used));
         }
-        _lastStamina = playerStats.currentStamina;
+        _lastStamina = PlayerStats.currentStamina;
 
         // 3. Calculate Usage Rate (Units per second over history window)
         StaminaUsageRate_Agent = CalculateAccumulatedValue(_staminaUsedHistory);
@@ -230,9 +238,32 @@ public class Telemetry : MonoBehaviour
     { 
         _damageDealtHistory.Add(new KeyValuePair<float, float>(Time.time, amount)); 
     }
-    public void HandleDamageReceived(float amount) 
+    public void HandleDamageReceived(int amount) 
     { 
         _damageReceivedHistory.Add(new KeyValuePair<float, float>(Time.time, amount)); 
+    }
+
+private void HandleEnemyAttackAttempt(string attackName)
+    {
+        if (!_enemyAttackAttempts.ContainsKey(attackName)) _enemyAttackAttempts[attackName] = 0;
+        _enemyAttackAttempts[attackName]++;
+    }
+
+    private void HandleEnemyAttackSuccess(string attackName)
+    {
+        if (!_enemyAttackSuccesses.ContainsKey(attackName)) _enemyAttackSuccesses[attackName] = 0;
+        _enemyAttackSuccesses[attackName]++;
+    }
+
+// Helper to get success rate for a specific attack
+    public float GetEnemyAttackSuccessRate(string attackName)
+    {
+        if (_enemyAttackAttempts.TryGetValue(attackName, out int attempts) && attempts > 0)
+        {
+            int successes = _enemyAttackSuccesses.ContainsKey(attackName) ? _enemyAttackSuccesses[attackName] : 0;
+            return (float)successes / attempts;
+        }
+        return 0f;
     }
 
     // --- SECTION 7: Debugging ---

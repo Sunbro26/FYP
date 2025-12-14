@@ -31,7 +31,7 @@ public class SkeletonAI : Agent
         public float preferredCombatRange = 2.5f;
     }
 
-    [System.Serializable]
+    [Serializable]
     public class EnemyAttack
     {
         public string name;             
@@ -99,7 +99,13 @@ public class SkeletonAI : Agent
     public bool canDealDamage = false;
 
     public static event Action OnParrySuccess;
-    public static event Action OnDamageTaken;
+
+    public event Action<int> OnDamageDealt;
+
+    // New Events for Telemetry
+    public event Action<string> OnEnemyAttackAttempt; 
+    public event Action<string> OnEnemyAttackSuccess;
+    
 
     // --- Hashes ---
     private static readonly int MoveX = Animator.StringToHash("MoveX");
@@ -165,6 +171,13 @@ public class SkeletonAI : Agent
         sensor.AddObservation(telemetrySystem.ParrySuccessRate_Agent);
         sensor.AddObservation(telemetrySystem.DodgeSuccessRate_Agent);
         sensor.AddObservation((float)telemetrySystem.TotalAttacks_Agent);
+                // Add Success Rate for EACH available attack in order
+        foreach (var attack in availableAttacks)
+        {
+            float rate = telemetrySystem.GetEnemyAttackSuccessRate(attack.name);
+            sensor.AddObservation(rate);
+        }
+
     }
 
     // --- ML-AGENTS: ACTIONS ---
@@ -368,6 +381,7 @@ public class SkeletonAI : Agent
         }
     }
 
+    
     // --- ATTACK EXECUTION ---
     IEnumerator ExecuteAttackRoutine()
     {
@@ -376,6 +390,10 @@ public class SkeletonAI : Agent
         SwitchState(AIState.Attacking);
         
         _currentExecutingAttack = _plannedAttack ?? availableAttacks[0];
+        
+        // FIRE EVENT: Log which attack is being tried
+        OnEnemyAttackAttempt?.Invoke(_currentExecutingAttack.name); 
+
         
         _animator.SetInteger(AttackIndex, _currentExecutingAttack.animationIndex);
         _animator.SetTrigger(TriggerAttack);
@@ -531,4 +549,14 @@ public class SkeletonAI : Agent
         Gizmos.color = canDealDamage ? new Color(1, 0, 0, 0.5f) : Color.yellow;
         Gizmos.DrawWireSphere(activeBone.position, hitRadius);
     }
+
+// Call this from your Weapon/Damage script when a hit happens
+    public void RegisterHit()
+    {
+        if (_currentExecutingAttack != null)
+        {
+            OnEnemyAttackSuccess?.Invoke(_currentExecutingAttack.name);
+        }
+    }
+    
 }
