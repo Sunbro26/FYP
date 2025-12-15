@@ -6,6 +6,7 @@ using System;
 public class PlayerAttack : MonoBehaviour
 {
     public static event Action OnPlayerAttack; 
+    public static event Action OnPlayerHitEnemy; 
 
     [Header("Attack Settings")]
     [SerializeField] float attackDuration = 0.8f;
@@ -90,21 +91,22 @@ public class PlayerAttack : MonoBehaviour
 
         foreach (Collider enemy in hitEnemies)
         {
-            // Debug.Log("We hit " + enemy.name); // Optional: Comment out to reduce console spam
-
             CharacterStats enemyStats = enemy.GetComponent<CharacterStats>();
+            if (enemyStats == null)
+            {
+                CharacterStats parentStats = enemy.GetComponentInParent<CharacterStats>();
+                if (parentStats != null) enemyStats = parentStats;
+            }
+
             if (enemyStats != null)
             {
                 enemyStats.TakeDamage(damageAmount);
-            }
-            else
-            {
-                CharacterStats parentStats = enemy.GetComponentInParent<CharacterStats>();
-                if (parentStats != null) parentStats.TakeDamage(damageAmount);
+                
+                // --- FIRE SUCCESS EVENT HERE ---
+                OnPlayerHitEnemy?.Invoke();
             }
         }
     }
-
     void OnDrawGizmosSelected()
     {
         if (attackPoint == null) return;

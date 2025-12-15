@@ -86,9 +86,8 @@ public class Telemetry : MonoBehaviour
         PlayerStats = playerTransform != null ? playerTransform.GetComponent<CharacterStats>() : null;
         EnemyStats = enemyTransform != null ? enemyTransform.GetComponent<CharacterStats>() : null;
         
-        // Attacks (Assuming PlayerAttack has these events)
-        // PlayerAttack.OnPlayerAttack += HandleAttackAttempt;
-        // PlayerAttack.OnPlayerHitEnemy += HandleAttackSuccess;
+         PlayerAttack.OnPlayerAttack += HandleAttackAttempt;
+         PlayerAttack.OnPlayerHitEnemy += HandleAttackSuccess;
 
         PlayerParry.OnParryAttempt += HandleParryAttempt;
         SkeletonAI.OnParrySuccess += HandleParrySuccess;
@@ -297,6 +296,7 @@ public class Telemetry : MonoBehaviour
         Debug.Log($"Block Rate: {BlockSuccessRate_Agent:P0} ({TotalBlocks_Agent} Blocks)");
         Debug.Log($"Parry Rate: {ParrySuccessRate_Agent:P0}");
         Debug.Log($"Dodge Rate: {DodgeSuccessRate_Agent:P0}");
+        Debug.Log($"Attack Efficiency: {AttackSuccessRate_Agent:P0} ({_attackSuccesses.Count} Hits / {TotalAttacks_Agent} Attempts)");
         Debug.Log($"Recent Damage: Dealt {RecentDamageDealt_Agent} / Taken {RecentDamageReceived_Agent}");
         Debug.Log($"------------------------");
     }
