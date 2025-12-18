@@ -92,7 +92,6 @@ public class PlayerProxyAgent : Agent
         }
     }
 
-     // --- 3. HEURISTIC (Human Control for Recording) ---
     public override void Heuristic(in ActionBuffers actionsOut)
     {
         var continuous = actionsOut.ContinuousActions;
@@ -107,9 +106,10 @@ public class PlayerProxyAgent : Agent
         if (Keyboard.current != null)
         {
             if (Keyboard.current.wKey.isPressed) continuous[1] = 1f;
-            if (Keyboard.current.sKey.isPressed) continuous[1] = -1f;
+            else if (Keyboard.current.sKey.isPressed) continuous[1] = -1f;
+
             if (Keyboard.current.dKey.isPressed) continuous[0] = 1f;
-            if (Keyboard.current.aKey.isPressed) continuous[0] = -1f;
+            else if (Keyboard.current.aKey.isPressed) continuous[0] = -1f;
             
             // Buttons
             if (Keyboard.current.spaceKey.wasPressedThisFrame) discrete[0] = 3; // Dodge
@@ -121,5 +121,13 @@ public class PlayerProxyAgent : Agent
             if (Mouse.current.leftButton.isPressed) discrete[0] = 1; // Attack
             else if (Mouse.current.rightButton.isPressed) discrete[0] = 2; // Block
         }
+
+        // --- DEBUGGING ---
+        // Only log if we are actually pressing something
+        if (continuous[0] != 0 || continuous[1] != 0 || discrete[0] != 0)
+        {
+            Debug.Log($"<color=cyan>HEURISTIC:</color> Move=[{continuous[0]}, {continuous[1]}] | Action={discrete[0]}");
+        }
     }
+    
 }
