@@ -120,4 +120,16 @@ public class PlayerDodge : MonoBehaviour
         yield return new WaitForSeconds(iFrameDuration);
         IsInvincible = false;
     }
+    
+// Inside PlayerDodge.cs
+public void AttemptDodge()
+{
+    if (!_isDodging && (_attackScript == null || !_attackScript.IsAttacking()))
+    {
+        // ... (copy rest of OnDodge logic) ...
+        if (_walkScript != null) _walkScript.IsMovementLocked = true;
+        OnDodgeAttempt?.Invoke();
+        StartCoroutine(DodgeSequence());
+    }
+}
 }

@@ -94,4 +94,9 @@ private void UpdateAnimation()
     {
         return moveInput;
     }
+    public void SetInput(Vector2 input)
+{
+    moveInput = input; // Use this instead of reading Context in Update
+}
+
 }

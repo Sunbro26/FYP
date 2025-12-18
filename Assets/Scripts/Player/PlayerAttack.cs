@@ -115,4 +115,18 @@ public class PlayerAttack : MonoBehaviour
     {
         return _isAttacking;
     }
+    // Inside PlayerAttack.cs
+public void AttemptAttack()
+{
+    // Copy the logic from OnAttack but remove "context.started"
+    if (!_isAttacking 
+        && (_dodgeScript == null || !_dodgeScript.IsDodging()) 
+        && (_blockScript == null || !_blockScript.IsBlocking)) 
+    {
+        if (_stats != null && _stats.UseStamina(staminaCost))
+        {
+            StartCoroutine(AttackSequence());
+        }
+    }
+}
 }

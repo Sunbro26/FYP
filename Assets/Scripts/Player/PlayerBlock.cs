@@ -50,4 +50,21 @@ public class PlayerBlock : MonoBehaviour
             _animator.SetBool(BlockingParam, false);
         }
     }
+    // Inside PlayerBlock.cs
+public void SetBlocking(bool blocking)
+{
+    // Logic from OnBlock performed/canceled
+    if (blocking)
+    {
+        if (_dodgeScript.IsDodging() || _attackScript.IsAttacking()) return;
+        IsBlocking = true;
+        _animator.SetBool(BlockingParam, true);
+    }
+    else
+    {
+        IsBlocking = false;
+        _animator.SetBool(BlockingParam, false);
+    }
+}
+
 }
