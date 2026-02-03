@@ -1,0 +1,47 @@
+{
+    "name": "root",
+    "metadata": {
+        "timer_format_version": "0.1.0",
+        "start_time_seconds": "1770105319",
+        "python_version": "3.10.12 (main, Dec  7 2025, 14:29:16) [MSC v.1944 64 bit (AMD64)]",
+        "command_line_arguments": "D:\\Uni\\FYP\\FYP\\.venv\\Scripts\\mlagents-learn config/player_trainer_config.yaml --run-id=PlayerProxy",
+        "mlagents_version": "1.1.0",
+        "mlagents_envs_version": "1.1.0",
+        "communication_protocol_version": "1.5.0",
+        "pytorch_version": "2.9.1+cpu",
+        "numpy_version": "1.23.5",
+        "end_time_seconds": "1770105328"
+    },
+    "total": 9.395316399999501,
+    "count": 1,
+    "self": 0.006832399999439076,
+    "children": {
+        "run_training.setup": {
+            "total": 0.21827250000023923,
+            "count": 1,
+            "self": 0.21827250000023923
+        },
+        "TrainerController.start_learning": {
+            "total": 9.170211499999823,
+            "count": 1,
+            "self": 0.0008189999989554053,
+            "children": {
+                "TrainerController._reset_env": {
+                    "total": 9.1693750000004,
+                    "count": 1,
+                    "self": 9.1693750000004
+                },
+                "trainer_threads": {
+                    "total": 1.2999998943996616e-06,
+                    "count": 1,
+                    "self": 1.2999998943996616e-06
+                },
+                "TrainerController._save_models": {
+                    "total": 1.6200000573007856e-05,
+                    "count": 1,
+                    "self": 1.6200000573007856e-05
+                }
+            }
+        }
+    }
+}
