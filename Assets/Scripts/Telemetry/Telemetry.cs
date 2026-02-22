@@ -39,6 +39,11 @@ public class Telemetry : MonoBehaviour
     public float RecentDamageDealt_Agent { get; private set; }
     public float RecentDamageReceived_Agent { get; private set; }
     
+    // --- New Tactical Properties ---
+    [Header("Tactical Enemy Metrics")]
+    public float EnemyFSMState_Agent { get; private set; }
+    public float IsEnemyAttacking_Agent { get; private set; }
+
     [Header("Success Rates (0.0 to 1.0)")]
     public float AttackSuccessRate_Agent { get; private set; }
     public float ParrySuccessRate_Agent { get; private set; }
@@ -199,6 +204,15 @@ public class Telemetry : MonoBehaviour
         CleanupKVPList(_damageDealtHistory);
         CleanupKVPList(_damageReceivedHistory);
         CleanupKVPList(_staminaUsedHistory);
+
+        // --- UPDATE: Sync Tactical Enemy Context ---
+        if (enemyAI != null)
+        {
+            // Normalize state (0 to 1 range) based on 6 possible enum values
+            EnemyFSMState_Agent = (float)enemyAI.currentState / 5f; 
+            // Proactive Threat detection
+            IsEnemyAttacking_Agent = (enemyAI.currentState == SkeletonAI.AIState.Attacking) ? 1f : 0f;
+        }
 
         // Update Counts
         TotalAttacks_Agent = _attackAttempts.Count;

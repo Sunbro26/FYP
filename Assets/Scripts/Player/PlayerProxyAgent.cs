@@ -36,34 +36,53 @@ public class PlayerProxyAgent : Agent
 
         // Group 2: Physical Spatial State (7 floats)
         float distance = Vector3.Distance(transform.position, enemyTransform.position);
+        Vector3 dirToEnemy = (enemyTransform.position - transform.position).normalized;
+        
         sensor.AddObservation(distance);
         sensor.AddObservation(transform.forward); // 3 floats
-        sensor.AddObservation((enemyTransform.position - transform.position).normalized); // 3 floats
+        sensor.AddObservation(dirToEnemy); // 3 floats
 
-        // Group 3: Telemetry / Self-Awareness (11 floats)
-        // Spatial
-        sensor.AddObservation(telemetrySystem.PlayerEnemyDistance_Agent);
-        sensor.AddObservation(telemetrySystem.PlayerEnemyDistanceChange_Agent);
+          // --- GROUP 3: Tactical Enemy Context (6 Floats) ---
+        // ADDITION: This stops random rolling by allowing the AI to see the "Why" (Intent)
+        sensor.AddObservation(telemetrySystem.EnemyFSMState_Agent);    // 1 float: Idle/Attack/Maneuver?
+        sensor.AddObservation(telemetrySystem.IsEnemyAttacking_Agent); // 1 float: Swing detection
+
+        // Relative Angle (Dot Product): 1 float
+        // ADDITION: Provides a "Cheat Sheet" for facing. 1.0 = Facing enemy, -1.0 = Back turned.
+        // This is key to fixing the "not looking at skeletons" problem.
+        sensor.AddObservation(Vector3.Dot(transform.forward, dirToEnemy)); 
         
-        // Resources (Crucial for learning stamina management)
+        // Enemy Forward Vector: 3 floats
+        // ADDITION: Helps AI learn "Backstabbing" by knowing where the enemy is looking.
+        sensor.AddObservation(enemyTransform.forward); 
+
+        // --- GROUP 4: Dynamic Performance & Resources (5 Floats) ---
+        // UPDATE: Removed "Total Counts" and "Success Rates" (These are too slow for combat).
         sensor.AddObservation(telemetrySystem.PlayerHealthPercentage_Agent);
         sensor.AddObservation(telemetrySystem.PlayerStaminaPercentage_Agent);
-        sensor.AddObservation(telemetrySystem.StaminaUsageRate_Agent);
-
-        // Performance / Skill
-        sensor.AddObservation(telemetrySystem.RecentDamageDealt_Agent);
-        sensor.AddObservation(telemetrySystem.RecentDamageReceived_Agent);
-        sensor.AddObservation(telemetrySystem.AttackSuccessRate_Agent);
-        sensor.AddObservation(telemetrySystem.ParrySuccessRate_Agent);
-        sensor.AddObservation(telemetrySystem.DodgeSuccessRate_Agent);
+        sensor.AddObservation(telemetrySystem.PlayerEnemyDistanceChange_Agent); // Moving closer or further?
         
-        // Activity Level
-        sensor.AddObservation((float)telemetrySystem.TotalAttacks_Agent);
+        // Damage feedback normalized for the neural network
+        sensor.AddObservation(telemetrySystem.RecentDamageDealt_Agent / 100f);
+        sensor.AddObservation(telemetrySystem.RecentDamageReceived_Agent / 100f);
+
+        // FINAL VALIDATION: 2 + 7 + 6 + 5 = 20 FLOATS TOTAL.
     }
 
     // --- 2. ACTIONS (The Brain driving the Body) ---
     public override void OnActionReceived(ActionBuffers actions)
     {
+        // --- TACTICAL ROTATION: Always face target ---
+        if (enemyTransform != null)
+        {
+            Vector3 lookDir = (enemyTransform.position - transform.position).normalized;
+            lookDir.y = 0; 
+            if (lookDir != Vector3.zero)
+            {
+                transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(lookDir), Time.deltaTime * 15f);
+            }
+        }
+
         // Continuous: Movement (WASD)
         float moveX = actions.ContinuousActions[0];
         float moveY = actions.ContinuousActions[1];
@@ -80,13 +99,22 @@ public class PlayerProxyAgent : Agent
 
         switch (button)
         {
-            case 1: 
+            case 1: // ATTACK
+                if (enemyTransform != null)
+                {
+                    // Instant snap for attack precision
+                    Vector3 attackDir = (enemyTransform.position - transform.position).normalized;
+                    attackDir.y = 0;
+                    if (attackDir != Vector3.zero) transform.rotation = Quaternion.LookRotation(attackDir);
+                }
                 if (attackScript) attackScript.AttemptAttack(); 
                 break;
-            case 2: 
+
+            case 2: // BLOCK
                 if (blockScript) blockScript.SetBlocking(true); 
                 break;
-            case 3: 
+
+            case 3: // DODGE
                 if (dodgeScript) dodgeScript.AttemptDodge(); 
                 break;
         }

@@ -61,7 +61,7 @@ public class SkeletonAI : MonoBehaviour
     private Color _originalSwordColor; 
     private Material _swordMaterialInstance; 
     private string _colorPropertyName; 
-    private AIState _currentState;
+    public AIState currentState;
     private NavMeshAgent _agent;
     private Animator _animator;
     private Transform _target;
@@ -111,7 +111,7 @@ public class SkeletonAI : MonoBehaviour
 
         float distance = Vector3.Distance(transform.position, _target.position);
 
-        if (_currentState == AIState.Strategizing)
+        if (currentState == AIState.Strategizing)
         {
             _decisionTimer += Time.deltaTime;
             // The Heuristic Decision Logic runs every frame to check timer
@@ -123,7 +123,7 @@ public class SkeletonAI : MonoBehaviour
         }
 
         ExecuteStateMovement(distance);
-        if (_currentState != AIState.Stunned) FaceTarget();
+        if (currentState != AIState.Stunned) FaceTarget();
     }
 
     // --- HEURISTIC DECISION LOGIC (Formerly "Heuristic()" in Agent) ---
@@ -196,7 +196,7 @@ public class SkeletonAI : MonoBehaviour
     // --- CORE LOGIC & MOVEMENT ---
     void ManageActiveState(float dist)
     {
-        switch (_currentState)
+        switch (currentState)
         {
             case AIState.Idle:
                 if (dist < sensorRadius) SwitchState(AIState.Strategizing);
@@ -216,7 +216,7 @@ public class SkeletonAI : MonoBehaviour
 
     void ExecuteStateMovement(float dist)
     {
-        switch (_currentState)
+        switch (currentState)
         {
             case AIState.Strategizing:
                 _agent.isStopped = true;
@@ -297,7 +297,7 @@ public class SkeletonAI : MonoBehaviour
     }
 
     // Helpers
-    void SwitchState(AIState newState) { if (_currentState != newState) { _currentState = newState; _decisionTimer = 0; } }
+    void SwitchState(AIState newState) { if (currentState != newState) { currentState = newState; _decisionTimer = 0; } }
     void HandleCirclingMovement() { /* Tangent Logic */ } // (Keeping brief, same as before)
     void UpdateAnim(float x, float z) { _animator.SetFloat(MoveX, x, 0.1f, Time.deltaTime); _animator.SetFloat(MoveZ, z, 0.1f, Time.deltaTime); }
     void FaceTarget() { 
