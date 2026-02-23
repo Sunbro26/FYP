@@ -34,6 +34,13 @@ public class LockOn : MonoBehaviour
 
     }
 
+    void Start()
+    {
+        var t = AcquireTargetOnScreen();
+        if (t != null)
+            LockOnTarget(t);
+    }
+
     void Update()
     {
         // Only steer when locked; the free camera behavior remains untouched.

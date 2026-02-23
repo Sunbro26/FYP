@@ -18,77 +18,108 @@ public class PlayerProxyAgent : Agent
     public Transform enemyTransform;
     public Telemetry telemetrySystem; // Must be assigned!
 
+    private Vector3 _lastEnemyPos;
+    
+
     // --- 1. OBSERVATIONS (The Inputs) ---
     // Total Size: 20 Floats
     public override void CollectObservations(VectorSensor sensor)
     {
         if (enemyTransform == null || telemetrySystem == null)
         {
-            // Fallback padding (20 zeros)
+            // Fallback padding (Must match final count!)
             for(int i=0; i<20; i++) sensor.AddObservation(0f);
             return;
         }
 
-        // Group 1: Internal State (2 floats)
-        // Replaces AIState enum with boolean flags converted to floats
+        // --- GROUP 1: Self State (2 Floats) ---
         sensor.AddObservation(blockScript.IsBlocking ? 1f : 0f); 
         sensor.AddObservation(dodgeScript.IsInvincible ? 1f : 0f); 
 
-        // Group 2: Physical Spatial State (7 floats)
+        // --- GROUP 2: Spatial Relationship (7 Floats) ---
         float distance = Vector3.Distance(transform.position, enemyTransform.position);
-        Vector3 dirToEnemy = (enemyTransform.position - transform.position).normalized;
-        
         sensor.AddObservation(distance);
-        sensor.AddObservation(transform.forward); // 3 floats
-        sensor.AddObservation(dirToEnemy); // 3 floats
-
-          // --- GROUP 3: Tactical Enemy Context (6 Floats) ---
-        // ADDITION: This stops random rolling by allowing the AI to see the "Why" (Intent)
-        sensor.AddObservation(telemetrySystem.EnemyFSMState_Agent);    // 1 float: Idle/Attack/Maneuver?
-        sensor.AddObservation(telemetrySystem.IsEnemyAttacking_Agent); // 1 float: Swing detection
-
-        // Relative Angle (Dot Product): 1 float
-        // ADDITION: Provides a "Cheat Sheet" for facing. 1.0 = Facing enemy, -1.0 = Back turned.
-        // This is key to fixing the "not looking at skeletons" problem.
-        sensor.AddObservation(Vector3.Dot(transform.forward, dirToEnemy)); 
         
-        // Enemy Forward Vector: 3 floats
-        // ADDITION: Helps AI learn "Backstabbing" by knowing where the enemy is looking.
-        sensor.AddObservation(enemyTransform.forward); 
+        // Critical: We send BOTH forward vectors.
+        // This lets the NN calculate angles (e.g., "Am I behind him?")
+        sensor.AddObservation(transform.forward); // My Facing (3)
+        Vector3 dirToEnemy = (enemyTransform.position - transform.position).normalized;
+        sensor.AddObservation(dirToEnemy); // Vector To Enemy (3)
 
-        // --- GROUP 4: Dynamic Performance & Resources (5 Floats) ---
-        // UPDATE: Removed "Total Counts" and "Success Rates" (These are too slow for combat).
+        // --- GROUP 3: Enemy Intent (CRITICAL FOR DODGING) (6 Floats) ---
+        // 1. Is he attacking? (Use Telemetry or direct reference if possible)
+        // Ideally, read the Enemy's Animator state or a boolean from SkeletonAI
+        SkeletonAI enemyAI = enemyTransform.GetComponent<SkeletonAI>();
+        bool enemyAttacking = (enemyAI != null && enemyAI.canDealDamage); // Or use IsActionLocked
+        sensor.AddObservation(enemyAttacking ? 1f : 0f); 
+
+        // 2. Enemy Facing (So we can dodge to his back/side)
+        sensor.AddObservation(enemyTransform.forward); // (3 floats)
+
+        // 3. Dot Product (Are we facing each other?)
+        // 1 = Face to Face, -1 = Back turned
+        float facingDot = Vector3.Dot(transform.forward, enemyTransform.forward);
+        sensor.AddObservation(facingDot); // (1 float)
+        
+        // 4. Enemy Velocity / Movement (Are they rushing me?)
+        // Simple proxy: Is he moving?
+        // (1 float)
+         Vector3 enemyVelocity = (enemyTransform.position - _lastEnemyPos) / Time.fixedDeltaTime;
+        float enemySpeed = enemyVelocity.magnitude;
+        
+        // Add to observations (Replaces NavMeshAgent logic)
+        sensor.AddObservation(enemySpeed);
+
+        // Update for next frame
+        _lastEnemyPos = enemyTransform.position;    
+
+
+        // --- GROUP 4: Telemetry / Performance (5 Floats) ---
         sensor.AddObservation(telemetrySystem.PlayerHealthPercentage_Agent);
         sensor.AddObservation(telemetrySystem.PlayerStaminaPercentage_Agent);
-        sensor.AddObservation(telemetrySystem.PlayerEnemyDistanceChange_Agent); // Moving closer or further?
         
-        // Damage feedback normalized for the neural network
-        sensor.AddObservation(telemetrySystem.RecentDamageDealt_Agent / 100f);
-        sensor.AddObservation(telemetrySystem.RecentDamageReceived_Agent / 100f);
-
-        // FINAL VALIDATION: 2 + 7 + 6 + 5 = 20 FLOATS TOTAL.
+        // Dynamic feedback
+        sensor.AddObservation(telemetrySystem.PlayerEnemyDistanceChange_Agent); // Closing speed
+        sensor.AddObservation(telemetrySystem.RecentDamageDealt_Agent / 100f);  // Reward signal
+        sensor.AddObservation(telemetrySystem.RecentDamageReceived_Agent / 100f); // Punishment signal
+        
+        // RECALCULATE TOTAL:
+        // G1: 2
+        // G2: 7
+        // G3: 1 + 3 + 1 + 1 = 6
+        // G4: 5
+        // Total = 20. (Perfect match for your current setup!)
     }
 
     // --- 2. ACTIONS (The Brain driving the Body) ---
-    public override void OnActionReceived(ActionBuffers actions)
+public override void OnActionReceived(ActionBuffers actions)
     {
-        // --- TACTICAL ROTATION: Always face target ---
+        // 1. Force Rotation to Face Enemy (Auto-Aim)
+        // This solves the "Randomly attacking air" problem.
         if (enemyTransform != null)
         {
-            Vector3 lookDir = (enemyTransform.position - transform.position).normalized;
-            lookDir.y = 0; 
-            if (lookDir != Vector3.zero)
+            Vector3 directionToEnemy = (enemyTransform.position - transform.position).normalized;
+            directionToEnemy.y = 0; // Keep flat
+            if (directionToEnemy != Vector3.zero)
             {
-                transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(lookDir), Time.deltaTime * 15f);
+                // Smoothly rotate towards enemy
+                transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(directionToEnemy), Time.deltaTime * 10f);
             }
         }
 
-        // Continuous: Movement (WASD)
-        float moveX = actions.ContinuousActions[0];
-        float moveY = actions.ContinuousActions[1];
-        
+        // 2. Interpret Movement as "Strafe / Advance"
+        // MoveY = Forward/Back relative to Enemy
+        // MoveX = Strafe Left/Right relative to Enemy
+        float inputForward = actions.ContinuousActions[1];
+        float inputStrafe = actions.ContinuousActions[0];
+
+        // We assume the character is now facing the enemy (from step 1).
+        // So "Forward" input naturally moves towards the enemy.
+        // We pass these inputs directly to Walk script.
         if (walkScript != null) 
-            walkScript.SetInput(new Vector2(moveX, moveY));
+        {
+            walkScript.SetInput(new Vector2(inputStrafe, inputForward));
+        }
 
         // Discrete: Buttons
         // 0=None, 1=Atk, 2=Block, 3=Dodge
