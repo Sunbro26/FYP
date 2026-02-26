@@ -2270,7 +2270,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Unity.ML-Agents::Unity.MLAgents.Demonstrations.DemonstrationRecorder
   Record: 1
-  NumStepsToRecord: 500
+  NumStepsToRecord: 0
   DemonstrationName: PlayerAggressive
   DemonstrationDirectory: ./config
 --- !u!1001 &321107628
