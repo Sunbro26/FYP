@@ -2755,6 +2755,8 @@ MonoBehaviour:
     windUpTime: 0.75
     damageDuration: 1
     totalDuration: 2.1
+    cooldown: 2.99
+    lastTimeUsed: -999
     tracksPlayerDuringWindup: 1
     useFootHitbox: 0
   - name: Dash Attack
@@ -2765,16 +2767,20 @@ MonoBehaviour:
     windUpTime: 1
     damageDuration: 0.8
     totalDuration: 2.1
+    cooldown: 5
+    lastTimeUsed: -999
     tracksPlayerDuringWindup: 1
     useFootHitbox: 0
   - name: Attack Horizontal
     animationIndex: 2
-    optimalRange: 1
+    optimalRange: 1.2
     rangeTolerance: 0.5
     weight: 5
     windUpTime: 0.65
     damageDuration: 1.2
     totalDuration: 2.2
+    cooldown: 4
+    lastTimeUsed: -999
     tracksPlayerDuringWindup: 1
     useFootHitbox: 0
   - name: Attack Backhand
@@ -2785,36 +2791,44 @@ MonoBehaviour:
     windUpTime: 0.6
     damageDuration: 1
     totalDuration: 3.1
+    cooldown: 4
+    lastTimeUsed: -999
     tracksPlayerDuringWindup: 1
     useFootHitbox: 0
   - name: Attack 360
     animationIndex: 4
     optimalRange: 1.5
     rangeTolerance: 0.5
-    weight: 5
+    weight: 2.47
     windUpTime: 0.75
     damageDuration: 1
     totalDuration: 2.45
+    cooldown: 6.01
+    lastTimeUsed: -999
     tracksPlayerDuringWindup: 0
     useFootHitbox: 0
   - name: Combo Attack
     animationIndex: 5
-    optimalRange: 1
+    optimalRange: 0.8
     rangeTolerance: 0.5
-    weight: 5
+    weight: 9.99
     windUpTime: 0.75
     damageDuration: 2.5
     totalDuration: 4.2
+    cooldown: 8.01
+    lastTimeUsed: -999
     tracksPlayerDuringWindup: 1
     useFootHitbox: 0
   - name: Run Jump Attack
     animationIndex: 6
     optimalRange: 3
     rangeTolerance: 1
-    weight: 5
+    weight: 1.99
     windUpTime: 1.5
     damageDuration: 0.85
     totalDuration: 3.6
+    cooldown: 4
+    lastTimeUsed: -999
     tracksPlayerDuringWindup: 1
     useFootHitbox: 0
   - name: Kick
@@ -2825,6 +2839,8 @@ MonoBehaviour:
     windUpTime: 0.5
     damageDuration: 0.4
     totalDuration: 1.85
+    cooldown: 2
+    lastTimeUsed: -999
     tracksPlayerDuringWindup: 1
     useFootHitbox: 1
   swordMesh: {fileID: 1909943965}

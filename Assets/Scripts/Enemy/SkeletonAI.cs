@@ -26,11 +26,17 @@ public class SkeletonAI : MonoBehaviour
         public int animationIndex;      
         public float optimalRange;      
         public float rangeTolerance = 0.5f; 
-        public float weight = 1.0f;     
+        public float weight = 1.0f;
+        
         [Header("Timing")]
         public float windUpTime;      
         public float damageDuration;  
-        public float totalDuration;   
+        public float totalDuration;
+        
+        [Header("Logic")]
+        public float cooldown = 4.0f; // NEW: How long before using this again?
+        [HideInInspector] public float lastTimeUsed = -999f; // Track usage
+
         [Header("Quirks")]
         public bool tracksPlayerDuringWindup = true;
         public bool useFootHitbox = false;
@@ -114,7 +120,6 @@ public class SkeletonAI : MonoBehaviour
         if (currentState == AIState.Strategizing)
         {
             _decisionTimer += Time.deltaTime;
-            // The Heuristic Decision Logic runs every frame to check timer
             RunHeuristicDecisionLogic();
         }
         else
@@ -126,7 +131,7 @@ public class SkeletonAI : MonoBehaviour
         if (currentState != AIState.Stunned) FaceTarget();
     }
 
-    // --- HEURISTIC DECISION LOGIC (Formerly "Heuristic()" in Agent) ---
+    // --- HEURISTIC DECISION LOGIC ---
     void RunHeuristicDecisionLogic()
     {
         if (_decisionTimer > currentPersona.decisionFrequency)
@@ -134,65 +139,122 @@ public class SkeletonAI : MonoBehaviour
             float dist = 0f;
             if (_target) dist = Vector3.Distance(transform.position, _target.position);
             
-            // Panic Check
+            // 1. Panic Check (FIXED)
+            // Instead of forcing Attack[0], find a valid fast attack
             if (dist < 1.5f && Random.value < currentPersona.aggression)
             {
-                // Force Attack 0
-                StartAttack(availableAttacks[0]);
-                return;
+                EnemyAttack panicAttack = GetRandomFastAttack();
+                if (panicAttack != null)
+                {
+                    StartAttack(panicAttack);
+                    return;
+                }
             }
 
-            // Smart Choice
+            // 2. Smart Choice
             EnemyAttack bestMove = ChooseSmartAttack();
             
             if (bestMove != null)
             {
-                // Plan the attack
                 _plannedAttack = bestMove;
                 SwitchState(AIState.Maneuvering);
             }
             else
             {
-                // Retreat
                 SwitchState(AIState.Retreating);
             }
         }
     }
 
     // --- UTILITY LOGIC ---
+// --- UTILITY LOGIC (Updated for Variety) ---
     EnemyAttack ChooseSmartAttack()
     {
         float currentDist = Vector3.Distance(transform.position, _target.position);
-        EnemyAttack bestAttack = null;
-        float bestScore = -999f;
+        
+        // Use a list to store all "Decent" options
+        List<EnemyAttack> validAttacks = new List<EnemyAttack>();
+        List<float> scores = new List<float>();
+        float totalScore = 0;
 
         foreach (var attack in availableAttacks)
         {
+            // Filter: Cooldown
+            if (Time.time < attack.lastTimeUsed + attack.cooldown) continue;
+
             float score = CalculateAttackScore(attack, currentDist);
-            score += Random.Range(-5f, 5f); 
-            if (score > bestScore)
+            
+            // Only consider attacks that make sense (Score > 0)
+            if (score > 0)
             {
-                bestScore = score;
-                bestAttack = attack;
+                // Cube the score to emphasize good moves, but keep bad ones possible
+                // e.g. Score 10 -> 1000. Score 5 -> 125. 
+                // The 10 is much more likely, but 5 is still possible.
+                float finalScore = Mathf.Pow(score, 2); 
+                
+                validAttacks.Add(attack);
+                scores.Add(finalScore);
+                totalScore += finalScore;
             }
         }
-        return bestAttack;
+
+        // Weighted Random Selection (The Lottery)
+        if (validAttacks.Count > 0)
+        {
+            float randomValue = Random.Range(0, totalScore);
+            float cursor = 0;
+            for (int i = 0; i < validAttacks.Count; i++)
+            {
+                cursor += scores[i];
+                if (cursor >= randomValue) return validAttacks[i];
+            }
+            return validAttacks[validAttacks.Count - 1]; // Fallback to last
+        }
+
+        return null;
     }
 
     float CalculateAttackScore(EnemyAttack attack, float dist)
     {
-        float score = 0f;
+        float score = 10f; // Base score so we don't hit 0 easily
+
+        // 1. Range Logic (Widened tolerance)
         float distDiff = Mathf.Abs(dist - attack.optimalRange);
-        if (distDiff <= attack.rangeTolerance) score += 50f; 
-        else score -= distDiff * 10f; 
+        
+        // If within range + 1 meter, it's a good candidate
+        if (distDiff <= attack.rangeTolerance + 1.0f) 
+        {
+            score += 40f; 
+            // Bonus points for being in PERFECT range
+            if (distDiff <= attack.rangeTolerance) score += 20f;
+        }
+        else 
+        {
+            // Penalty for distance, but not as harsh
+            score -= distDiff * 3f; 
+        }
 
-        if (dist > 5.0f && attack.optimalRange > 4.0f) score += 30f;
-        if (dist < 2.0f && attack.optimalRange < 2.5f) score += 20f;
+        // 2. Add Weight (Inspector Bias)
+        score += attack.weight * 5f; // Multiplied to make Inspector slider impactful
 
-        score += attack.weight; 
         return score;
     }
 
+    EnemyAttack GetRandomFastAttack()
+    {
+        // INCREASED THRESHOLD: Now includes attacks up to 1.0s windup
+        // This allows Basic Slash / Horizontal to be used in "Panic"
+        List<EnemyAttack> fastAttacks = availableAttacks.FindAll(a => a.windUpTime < 1.0f);
+        
+        if (fastAttacks.Count > 0)
+        {
+            // Pick random from valid fast attacks
+            return fastAttacks[Random.Range(0, fastAttacks.Count)];
+        }
+        
+        // Fallback: Just return the first available attack (ignoring windup)
+        return availableAttacks.Count > 0 ? availableAttacks[0] : null;
+    }
     // --- CORE LOGIC & MOVEMENT ---
     void ManageActiveState(float dist)
     {
@@ -255,6 +317,10 @@ public class SkeletonAI : MonoBehaviour
         SwitchState(AIState.Attacking);
         
         _currentExecutingAttack = _plannedAttack ?? availableAttacks[0];
+        
+        // --- NEW: Mark as used for Cooldowns ---
+        _currentExecutingAttack.lastTimeUsed = Time.time;
+
         OnEnemyAttackAttempt?.Invoke(_currentExecutingAttack.name);
 
         _animator.SetInteger(AttackIndex, _currentExecutingAttack.animationIndex);
@@ -296,9 +362,30 @@ public class SkeletonAI : MonoBehaviour
         _animator.SetFloat(AttackSpeedHash, 1f); _isActionLocked = false; SwitchState(AIState.Retreating);
     }
 
-    // Helpers
     void SwitchState(AIState newState) { if (currentState != newState) { currentState = newState; _decisionTimer = 0; } }
-    void HandleCirclingMovement() { /* Tangent Logic */ } // (Keeping brief, same as before)
+    
+    // --- CIRCLING LOGIC ---
+    void HandleCirclingMovement() 
+    {
+        Vector3 toPlayer = (_target.position - transform.position).normalized;
+        Vector3 tangent = Vector3.Cross(toPlayer, Vector3.up);
+
+        _strafeTimer += Time.deltaTime;
+        if (_strafeTimer > 3.0f)
+        {
+            _strafeDirection = (Random.value > 0.5f) ? 1f : -1f;
+            _strafeTimer = 0f;
+        }
+
+        Vector3 finalMove = tangent * _strafeDirection * circleSpeed * Time.deltaTime;
+        float dist = Vector3.Distance(transform.position, _target.position);
+        float error = dist - currentPersona.preferredCombatRange;
+        Vector3 correction = toPlayer * error * 0.5f * Time.deltaTime; 
+
+        _agent.Move(finalMove + correction);
+        UpdateAnim(_strafeDirection, 0);
+    }
+
     void UpdateAnim(float x, float z) { _animator.SetFloat(MoveX, x, 0.1f, Time.deltaTime); _animator.SetFloat(MoveZ, z, 0.1f, Time.deltaTime); }
     void FaceTarget() { 
         Vector3 d = (_target.position - transform.position).normalized; d.y=0; 
