@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
 
-// Pure MonoBehaviour. No ML-Agents inheritance.
 [RequireComponent(typeof(NavMeshAgent), typeof(Animator))]
 public class SkeletonAI : MonoBehaviour 
 {
@@ -46,6 +45,11 @@ public class SkeletonAI : MonoBehaviour
     public AIPersona currentPersona;
     public float sensorRadius = 15f;
     public float circleSpeed = 2.5f;
+
+    // --- PROXY AGENT MODIFICATION ---
+    [Header("AI Control")]
+    [Tooltip("If true, the internal heuristic logic is disabled, allowing a Proxy Agent to drive this character.")]
+    public bool useExternalAI = false; 
 
     [Header("Attack Library")]
     public List<EnemyAttack> availableAttacks; 
@@ -113,6 +117,9 @@ public class SkeletonAI : MonoBehaviour
     {
         UpdateDebugVisuals(); 
         if (_target == null) return;
+        // --- PROXY AGENT MODIFICATION: Logic Guard ---
+        // If an external agent is controlling us, we skip the internal decision-making and movement logic.
+        if (useExternalAI) return; 
         if (_isActionLocked) return;
 
         float distance = Vector3.Distance(transform.position, _target.position);
@@ -396,5 +403,41 @@ public class SkeletonAI : MonoBehaviour
         return Mathf.Abs(d - _plannedAttack.optimalRange) <= _plannedAttack.rangeTolerance; 
     }
     void UpdateDebugVisuals() { if (_swordMaterialInstance) _swordMaterialInstance.SetColor(_colorPropertyName, canDealDamage ? Color.red : _originalSwordColor); }
-    void OnDrawGizmos() { /* Gizmo logic */ }
+    
+    // --- PROXY AGENT MODIFICATION: Remote Control Methods ---
+
+    /// <summary>
+    /// Allows an external script (like the Proxy Agent) to drive movement.
+    /// </summary>
+    public void SetMovementInput(float strafe, float forward)
+    {
+        if (_isActionLocked || currentState == AIState.Stunned) return;
+
+        // 1. Update Animator parameters
+        UpdateAnim(strafe, forward);
+
+        // 2. Physical Movement logic
+        Vector3 toPlayer = (_target.position - transform.position).normalized;
+        Vector3 tangent = Vector3.Cross(toPlayer, Vector3.up);
+
+        Vector3 moveVec = (tangent * strafe * circleSpeed) + (toPlayer * forward * circleSpeed);
+        _agent.Move(moveVec * Time.deltaTime);
+    }
+
+    /// <summary>
+    /// Allows an external script to trigger a specific attack by its list index.
+    /// </summary>
+    public void RequestAttack(int attackIndex)
+    {
+        if (_isActionLocked || currentState == AIState.Stunned) return;
+
+        if (attackIndex >= 0 && attackIndex < availableAttacks.Count)
+        {
+            EnemyAttack attack = availableAttacks[attackIndex];
+            if (Time.time >= attack.lastTimeUsed + attack.cooldown)
+            {
+                StartAttack(attack);
+            }
+        }
+    }
 }
