@@ -409,21 +409,27 @@ public class SkeletonAI : MonoBehaviour
     /// <summary>
     /// Allows an external script (like the Proxy Agent) to drive movement.
     /// </summary>
+    private Vector2 _smoothInputVector; 
     public void SetMovementInput(float strafe, float forward)
     {
         if (_isActionLocked || currentState == AIState.Stunned) return;
 
-        // 1. Update Animator parameters
-        UpdateAnim(strafe, forward);
+        // --- THE FIX: SMOOTHING ---
+        // Lerp from current value to target value over time.
+        // 10f is the speed. Lower = Smoother/Sluggish. Higher = Snappier/Jittery.
+        _smoothInputVector = Vector2.Lerp(_smoothInputVector, new Vector2(strafe, forward), Time.deltaTime * 10f);
+
+        // 1. Update Animator parameters using smoothed values
+        UpdateAnim(_smoothInputVector.x, _smoothInputVector.y);
 
         // 2. Physical Movement logic
         Vector3 toPlayer = (_target.position - transform.position).normalized;
         Vector3 tangent = Vector3.Cross(toPlayer, Vector3.up);
 
-        Vector3 moveVec = (tangent * strafe * circleSpeed) + (toPlayer * forward * circleSpeed);
+        // Use smoothed values for movement too
+        Vector3 moveVec = (tangent * _smoothInputVector.x * circleSpeed) + (toPlayer * _smoothInputVector.y * circleSpeed);
         _agent.Move(moveVec * Time.deltaTime);
     }
-
     /// <summary>
     /// Allows an external script to trigger a specific attack by its list index.
     /// </summary>
@@ -440,4 +446,8 @@ public class SkeletonAI : MonoBehaviour
             }
         }
     }
+    // Add these public getters
+    public float GetCurrentStrafe() => _animator.GetFloat(MoveX);
+    public float GetCurrentForward() => _animator.GetFloat(MoveZ);
+    public bool IsAttacking() => _isActionLocked; // Or check state
 }

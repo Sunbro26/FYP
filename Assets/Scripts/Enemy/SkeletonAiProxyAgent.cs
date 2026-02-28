@@ -70,6 +70,8 @@ public class SkeletonAiProxyAgent : Agent
     {
         if (skeletonBody == null) return;
 
+         if (skeletonBody.useExternalAI == false) return; 
+
         // Rotation: Always face the player (Auto-Aim)
         if (playerTransform != null)
         {
