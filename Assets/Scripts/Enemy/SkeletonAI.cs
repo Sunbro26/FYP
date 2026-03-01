@@ -34,16 +34,15 @@ public class SkeletonAI : MonoBehaviour
         public float totalDuration;
         
         [Header("Logic")]
-        public float cooldown = 4.0f; // NEW: How long before using this again?
-        [HideInInspector] public float lastTimeUsed = -999f; // Track usage
+        public float cooldown = 4.0f; 
+        [HideInInspector] public float lastTimeUsed = -999f; 
 
         [Header("Quirks")]
         public bool tracksPlayerDuringWindup = true;
         public bool useFootHitbox = false;
+
         [Header("Damage Stats")]
-        [Tooltip("How much HP this attack takes if it hits.")]
         public int damage = 15;
-        [Tooltip("How much Player Stamina this drains if Blocked.")]
         public float blockStaminaCost = 20f;
     }   
 
@@ -81,14 +80,18 @@ public class SkeletonAI : MonoBehaviour
     private NavMeshAgent _agent;
     private Animator _animator;
     private Transform _target;
+    
     private EnemyAttack _plannedAttack; 
     private EnemyAttack _currentExecutingAttack; 
+    
     private float _decisionTimer;
     private bool _isActionLocked = false;
     private int _retreatType = 0; 
     private float _strafeDirection = 1f;
     private float _strafeTimer = 0f;
+    
     public bool canDealDamage = false;
+    private Vector2 _smoothInputVector; 
 
     // --- Hashes ---
     private static readonly int MoveX = Animator.StringToHash("MoveX");
@@ -96,6 +99,7 @@ public class SkeletonAI : MonoBehaviour
     private static readonly int AttackIndex = Animator.StringToHash("AttackIndex");
     private static readonly int TriggerAttack = Animator.StringToHash("TriggerAttack");
     private static readonly int AttackSpeedHash = Animator.StringToHash("AttackSpeed");
+    private static readonly int HitTrigger = Animator.StringToHash("Hit");
 
     void Start()
     {
@@ -123,9 +127,10 @@ public class SkeletonAI : MonoBehaviour
     {
         UpdateDebugVisuals(); 
         if (_target == null) return;
-        // --- PROXY AGENT MODIFICATION: Logic Guard ---
-        // If an external agent is controlling us, we skip the internal decision-making and movement logic.
+
+        // --- PROXY CHECK ---
         if (useExternalAI) return; 
+
         if (_isActionLocked) return;
 
         float distance = Vector3.Distance(transform.position, _target.position);
@@ -133,6 +138,7 @@ public class SkeletonAI : MonoBehaviour
         if (currentState == AIState.Strategizing)
         {
             _decisionTimer += Time.deltaTime;
+            // Use the "Smart" Heuristic from the ML Branch
             RunHeuristicDecisionLogic();
         }
         else
@@ -144,16 +150,14 @@ public class SkeletonAI : MonoBehaviour
         if (currentState != AIState.Stunned) FaceTarget();
     }
 
-    // --- HEURISTIC DECISION LOGIC ---
+    // --- HEURISTIC DECISION LOGIC (ML Branch) ---
     void RunHeuristicDecisionLogic()
     {
         if (_decisionTimer > currentPersona.decisionFrequency)
         {
-            float dist = 0f;
-            if (_target) dist = Vector3.Distance(transform.position, _target.position);
+            float dist = Vector3.Distance(transform.position, _target.position);
             
-            // 1. Panic Check (FIXED)
-            // Instead of forcing Attack[0], find a valid fast attack
+            // 1. Panic Check (Using Smart Random selection from ML Branch)
             if (dist < 1.5f && Random.value < currentPersona.aggression)
             {
                 EnemyAttack panicAttack = GetRandomFastAttack();
@@ -164,7 +168,7 @@ public class SkeletonAI : MonoBehaviour
                 }
             }
 
-            // 2. Smart Choice
+            // 2. Smart Choice (Utility System)
             EnemyAttack bestMove = ChooseSmartAttack();
             
             if (bestMove != null)
@@ -179,39 +183,31 @@ public class SkeletonAI : MonoBehaviour
         }
     }
 
-    // --- UTILITY LOGIC ---
-// --- UTILITY LOGIC (Updated for Variety) ---
+    // --- UTILITY LOGIC (ML Branch) ---
     EnemyAttack ChooseSmartAttack()
     {
         float currentDist = Vector3.Distance(transform.position, _target.position);
         
-        // Use a list to store all "Decent" options
         List<EnemyAttack> validAttacks = new List<EnemyAttack>();
         List<float> scores = new List<float>();
         float totalScore = 0;
 
         foreach (var attack in availableAttacks)
         {
-            // Filter: Cooldown
+            // Cooldown Filter
             if (Time.time < attack.lastTimeUsed + attack.cooldown) continue;
 
             float score = CalculateAttackScore(attack, currentDist);
             
-            // Only consider attacks that make sense (Score > 0)
             if (score > 0)
             {
-                // Cube the score to emphasize good moves, but keep bad ones possible
-                // e.g. Score 10 -> 1000. Score 5 -> 125. 
-                // The 10 is much more likely, but 5 is still possible.
                 float finalScore = Mathf.Pow(score, 2); 
-                
                 validAttacks.Add(attack);
                 scores.Add(finalScore);
                 totalScore += finalScore;
             }
         }
 
-        // Weighted Random Selection (The Lottery)
         if (validAttacks.Count > 0)
         {
             float randomValue = Random.Range(0, totalScore);
@@ -221,53 +217,34 @@ public class SkeletonAI : MonoBehaviour
                 cursor += scores[i];
                 if (cursor >= randomValue) return validAttacks[i];
             }
-            return validAttacks[validAttacks.Count - 1]; // Fallback to last
+            return validAttacks[validAttacks.Count - 1]; 
         }
-
         return null;
     }
 
     float CalculateAttackScore(EnemyAttack attack, float dist)
     {
-        float score = 10f; // Base score so we don't hit 0 easily
-
-        // 1. Range Logic (Widened tolerance)
+        float score = 10f; 
         float distDiff = Mathf.Abs(dist - attack.optimalRange);
         
-        // If within range + 1 meter, it's a good candidate
         if (distDiff <= attack.rangeTolerance + 1.0f) 
         {
             score += 40f; 
-            // Bonus points for being in PERFECT range
             if (distDiff <= attack.rangeTolerance) score += 20f;
         }
-        else 
-        {
-            // Penalty for distance, but not as harsh
-            score -= distDiff * 3f; 
-        }
+        else score -= distDiff * 3f; 
 
-        // 2. Add Weight (Inspector Bias)
-        score += attack.weight * 5f; // Multiplied to make Inspector slider impactful
-
+        score += attack.weight * 5f; 
         return score;
     }
 
     EnemyAttack GetRandomFastAttack()
     {
-        // INCREASED THRESHOLD: Now includes attacks up to 1.0s windup
-        // This allows Basic Slash / Horizontal to be used in "Panic"
         List<EnemyAttack> fastAttacks = availableAttacks.FindAll(a => a.windUpTime < 1.0f);
-        
-        if (fastAttacks.Count > 0)
-        {
-            // Pick random from valid fast attacks
-            return fastAttacks[Random.Range(0, fastAttacks.Count)];
-        }
-        
-        // Fallback: Just return the first available attack (ignoring windup)
+        if (fastAttacks.Count > 0) return fastAttacks[Random.Range(0, fastAttacks.Count)];
         return availableAttacks.Count > 0 ? availableAttacks[0] : null;
     }
+
     // --- CORE LOGIC & MOVEMENT ---
     void ManageActiveState(float dist)
     {
@@ -323,6 +300,7 @@ public class SkeletonAI : MonoBehaviour
         StartCoroutine(ExecuteAttackRoutine());
     }
 
+    // --- ATTACK EXECUTION (Merged from MultipleAttacks Branch) ---
     IEnumerator ExecuteAttackRoutine()
     {
         _isActionLocked = true;
@@ -330,29 +308,60 @@ public class SkeletonAI : MonoBehaviour
         SwitchState(AIState.Attacking);
         
         _currentExecutingAttack = _plannedAttack ?? availableAttacks[0];
-        
-        // --- NEW: Mark as used for Cooldowns ---
         _currentExecutingAttack.lastTimeUsed = Time.time;
-
+        
         OnEnemyAttackAttempt?.Invoke(_currentExecutingAttack.name);
 
         _animator.SetInteger(AttackIndex, _currentExecutingAttack.animationIndex);
         _animator.SetTrigger(TriggerAttack);
 
-        float timer = 0f;
-        while (timer < _currentExecutingAttack.windUpTime) 
+        // --- COMBO ATTACK LOGIC ---
+        if (_currentExecutingAttack.name == "Combo Attack")
         {
-            if (_currentExecutingAttack.tracksPlayerDuringWindup) FaceTarget();
-            timer += Time.deltaTime;
-            yield return null;
+            // Hit 1
+            float windup1 = 0.7f; float duration1 = 0.85f;
+            float windup2 = 0.1f; float duration2 = 0.85f;
+            float windup3 = 0.1f; float duration3 = 0.85f;
+
+            float timer = 0f;
+            while (timer < windup1) 
+            {
+                FaceTarget(); 
+                timer += Time.deltaTime;
+                yield return null;
+            }
+            canDealDamage = true; yield return new WaitForSeconds(duration1); canDealDamage = false;
+            yield return new WaitForSeconds(windup2); 
+            canDealDamage = true; yield return new WaitForSeconds(duration2); canDealDamage = false;
+            yield return new WaitForSeconds(windup3); 
+            canDealDamage = true; yield return new WaitForSeconds(duration3); canDealDamage = false;
+
+            float timeSpent = windup1 + duration1 + windup2 + duration2 + windup3 + duration3;
+            float remaining = _currentExecutingAttack.totalDuration - timeSpent;
+            if (remaining > 0) yield return new WaitForSeconds(remaining);
         }
+        else 
+        {
+            // --- STANDARD ATTACK LOGIC ---
+            float currentWindUp = _currentExecutingAttack.windUpTime;
+            float currentDamageWindow = _currentExecutingAttack.damageDuration;
+            float currentTotalDuration = _currentExecutingAttack.totalDuration;
 
-        canDealDamage = true;
-        yield return new WaitForSeconds(_currentExecutingAttack.damageDuration);
-        canDealDamage = false;
+            float timer = 0f;
+            while (timer < currentWindUp) 
+            {
+                if (_currentExecutingAttack.tracksPlayerDuringWindup) FaceTarget();
+                timer += Time.deltaTime;
+                yield return null;
+            }
 
-        float remaining = _currentExecutingAttack.totalDuration - _currentExecutingAttack.windUpTime - _currentExecutingAttack.damageDuration;
-        if (remaining > 0) yield return new WaitForSeconds(remaining);
+            canDealDamage = true;
+            yield return new WaitForSeconds(currentDamageWindow);
+            canDealDamage = false;
+
+            float remaining = currentTotalDuration - currentWindUp - currentDamageWindow;
+            if (remaining > 0) yield return new WaitForSeconds(remaining);
+        }
 
         _plannedAttack = null; 
         _isActionLocked = false;
@@ -361,50 +370,91 @@ public class SkeletonAI : MonoBehaviour
         else SwitchState(AIState.Strategizing);
     }
 
-    public void RegisterHit() { if (_currentExecutingAttack != null) OnEnemyAttackSuccess?.Invoke(_currentExecutingAttack.name); }
-
-    public void GetParried() {
-        StopAllCoroutines(); _isActionLocked = true; canDealDamage = false;
-        SwitchState(AIState.Stunned); OnParrySuccess?.Invoke();
-        StartCoroutine(ParryRoutine());
-    }
-    IEnumerator ParryRoutine() 
+    // --- PARRY LOGIC ---
+    public void GetParried()
     {
-        // 1. Clear any pending triggers so they don't fire late
+        StopAllCoroutines(); 
+        _isActionLocked = true;
+        _agent.isStopped = true;
+        canDealDamage = false; 
+        SwitchState(AIState.Stunned); 
+        OnParrySuccess?.Invoke();
+        StartCoroutine(ParryReboundRoutine());
+    }
+
+    private IEnumerator ParryReboundRoutine()
+    {
         _animator.ResetTrigger(TriggerAttack);
-
-        // 2. THE REBOUND (Reverse the swing quickly)
-        // We set it to -1.5f so it violently bounces backward, rather than just playing in slow reverse.
-        _animator.SetFloat(AttackSpeedHash, -1.5f); 
-        
-        // Wait for just 0.3 seconds. This only rewinds the very end of the swing.
+        _animator.SetFloat(AttackSpeedHash, -1.5f); // Fast rebound
         yield return new WaitForSeconds(0.3f);
-
-        // 3. RESET ATTACK SPEED
-        // Vital so future attacks don't stay broken
         _animator.SetFloat(AttackSpeedHash, 1f); 
-
-        // 4. THE STUN
-        // We force the animator to abort the attack and smoothly blend into the Stun animation.
         _animator.CrossFade("Stun", 0.15f);
-
-        // Wait for the duration of your Stun animation (Adjust this 1.5f to match your actual clip length)
         yield return new WaitForSeconds(1.1f);
-
-        // 5. RECOVERY
-        // Smoothly blend back into the moving/idle blend tree. This prevents the old attack from continuing!
         _animator.CrossFade("Locomotion", 0.25f);
-        
-        // Unlock AI logic
         _isActionLocked = false; 
-
-        // Force the boss to back off after being humiliated
         SwitchState(AIState.Retreating);
     }
 
+    // --- FLINCH LOGIC (From MultipleAttacks Branch) ---
+    public void TakeHit()
+    {
+        // Hyper-Armor check
+        if (_isActionLocked) return;
+
+        StopAllCoroutines(); 
+        _agent.isStopped = true;
+        _isActionLocked = true; 
+
+        _animator.SetTrigger(HitTrigger);
+        StartCoroutine(RecoverFromHit());
+    }
+
+    public void RegisterHit() { if (_currentExecutingAttack != null) OnEnemyAttackSuccess?.Invoke(_currentExecutingAttack.name); }
+    
+    private IEnumerator RecoverFromHit()
+    {
+        yield return new WaitForSeconds(0.5f);
+        _isActionLocked = false;
+        if (_agent.isOnNavMesh) _agent.isStopped = false;
+        SwitchState(AIState.Retreating);
+    }
+
+    // --- PROXY METHODS (From ML Branch) ---
+    public void SetMovementInput(float strafe, float forward)
+    {
+        if (_isActionLocked || currentState == AIState.Stunned) return;
+
+        _smoothInputVector = Vector2.Lerp(_smoothInputVector, new Vector2(strafe, forward), Time.deltaTime * 10f);
+        UpdateAnim(_smoothInputVector.x, _smoothInputVector.y);
+
+        Vector3 toPlayer = (_target.position - transform.position).normalized;
+        Vector3 tangent = Vector3.Cross(toPlayer, Vector3.up);
+        Vector3 moveVec = (tangent * _smoothInputVector.x * circleSpeed) + (toPlayer * _smoothInputVector.y * circleSpeed);
+        _agent.Move(moveVec * Time.deltaTime);
+    }
+
+    public void RequestAttack(int attackIndex)
+    {
+        if (_isActionLocked || currentState == AIState.Stunned) return;
+
+        if (attackIndex >= 0 && attackIndex < availableAttacks.Count)
+        {
+            EnemyAttack attack = availableAttacks[attackIndex];
+            if (Time.time >= attack.lastTimeUsed + attack.cooldown)
+            {
+                StartAttack(attack);
+            }
+        }
+    }
+
+    // --- HELPERS ---
+    public EnemyAttack GetCurrentAttack() => _currentExecutingAttack;
+    public float GetCurrentStrafe() => _animator.GetFloat(MoveX);
+    public float GetCurrentForward() => _animator.GetFloat(MoveZ);
+    public bool IsAttacking() => _isActionLocked;
+
     void SwitchState(AIState newState) { if (currentState != newState) { currentState = newState; _decisionTimer = 0; } }
     
-    // --- CIRCLING LOGIC ---
     void HandleCirclingMovement() 
     {
         Vector3 toPlayer = (_target.position - transform.position).normalized;
@@ -427,65 +477,18 @@ public class SkeletonAI : MonoBehaviour
     }
 
     void UpdateAnim(float x, float z) { _animator.SetFloat(MoveX, x, 0.1f, Time.deltaTime); _animator.SetFloat(MoveZ, z, 0.1f, Time.deltaTime); }
+    
     void FaceTarget() { 
         Vector3 d = (_target.position - transform.position).normalized; d.y=0; 
         if(d != Vector3.zero) transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(d), Time.deltaTime * 10f); 
     }
+    
     bool IsPositionedForPlan(float d) { 
         if(_plannedAttack == null) return false; 
         return Mathf.Abs(d - _plannedAttack.optimalRange) <= _plannedAttack.rangeTolerance; 
     }
+    
     void UpdateDebugVisuals() { if (_swordMaterialInstance) _swordMaterialInstance.SetColor(_colorPropertyName, canDealDamage ? Color.red : _originalSwordColor); }
     
-    // --- PROXY AGENT MODIFICATION: Remote Control Methods ---
-
-    /// <summary>
-    /// Allows an external script (like the Proxy Agent) to drive movement.
-    /// </summary>
-    private Vector2 _smoothInputVector; 
-    public void SetMovementInput(float strafe, float forward)
-    {
-        if (_isActionLocked || currentState == AIState.Stunned) return;
-
-        // --- THE FIX: SMOOTHING ---
-        // Lerp from current value to target value over time.
-        // 10f is the speed. Lower = Smoother/Sluggish. Higher = Snappier/Jittery.
-        _smoothInputVector = Vector2.Lerp(_smoothInputVector, new Vector2(strafe, forward), Time.deltaTime * 10f);
-
-        // 1. Update Animator parameters using smoothed values
-        UpdateAnim(_smoothInputVector.x, _smoothInputVector.y);
-
-        // 2. Physical Movement logic
-        Vector3 toPlayer = (_target.position - transform.position).normalized;
-        Vector3 tangent = Vector3.Cross(toPlayer, Vector3.up);
-
-        // Use smoothed values for movement too
-        Vector3 moveVec = (tangent * _smoothInputVector.x * circleSpeed) + (toPlayer * _smoothInputVector.y * circleSpeed);
-        _agent.Move(moveVec * Time.deltaTime);
-    }
-    /// <summary>
-    /// Allows an external script to trigger a specific attack by its list index.
-    /// </summary>
-    public void RequestAttack(int attackIndex)
-    {
-        if (_isActionLocked || currentState == AIState.Stunned) return;
-
-        if (attackIndex >= 0 && attackIndex < availableAttacks.Count)
-        {
-            EnemyAttack attack = availableAttacks[attackIndex];
-            if (Time.time >= attack.lastTimeUsed + attack.cooldown)
-            {
-                StartAttack(attack);
-            }
-        }
-    }
-    // Add these public getters
-    public float GetCurrentStrafe() => _animator.GetFloat(MoveX);
-    public float GetCurrentForward() => _animator.GetFloat(MoveZ);
-    public bool IsAttacking() => _isActionLocked; // Or check state
-    // --- Helper for PlayerControl to get stats ---
-    public EnemyAttack GetCurrentAttack()
-    {
-        return _currentExecutingAttack;
-    }
+    void OnDrawGizmos() { /* Gizmo logic can go here if needed */ }
 }
