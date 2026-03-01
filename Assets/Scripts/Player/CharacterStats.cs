@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 using System;
+using UnityEngine.AI; 
 
 public class CharacterStats : MonoBehaviour
 {
@@ -18,40 +19,43 @@ public class CharacterStats : MonoBehaviour
     public float maxStamina = 100f;
     public float currentStamina;
     public float staminaRegenRate = 15f;
-    
-    [Tooltip("Standard delay after using stamina before it comes back.")]
-    public float staminaRegenDelay = 1.0f; // Renamed from normalRegenDelay to match your old script
-    
-    [Tooltip("Penalty delay when stamina hits exactly 0.")]
-    public float exhaustionDelay = 2.5f; // New feature
-
+    public float staminaRegenDelay = 1.0f; 
+    public float exhaustionDelay = 2.5f; 
     public Slider staminaSlider; 
 
-    // --- Internal State ---
-    // We switched from _lastStaminaUseTime to _regenStartTime 
-    // because it makes pausing regeneration (Guard Break) much easier to calculate.
-    private float _regenStartTime; 
+    private float _regenStartTime;
+    private bool _isDead = false;
+    private Animator _animator;
+    private NavMeshAgent _agent; 
+    private Collider _collider;  
     
-    public bool IsDead => currentHealth <= 0;
+    private Vector3 _startPosition;
+    private Quaternion _startRotation;
 
-    // --- TEAMMATE'S TELEMETRY EVENT (PRESERVED) ---
+    public bool IsDead => _isDead;
     public event Action<int> OnTakeDamage;
+
+    private static readonly int DeathTrigger = Animator.StringToHash("Death");
+    private static readonly int ResetTrigger = Animator.StringToHash("Reset");
 
     void Awake()
     {
         currentHealth = maxHealth;
         currentStamina = maxStamina;
+        _startPosition = transform.position;
+        _startRotation = transform.rotation;
+        
+        _animator = GetComponentInChildren<Animator>();
+        _agent = GetComponent<NavMeshAgent>();
+        _collider = GetComponent<Collider>();
     }
 
-    void Start()
-    {
-        UpdateUI();
-    }
+    void Start() { UpdateUI(); }
 
     void Update()
     {
-        // Stamina Regeneration Logic
-        // We only regen if we are below max AND the current time is past the allowed start time
+        if (_isDead) return; 
+
         if (currentStamina < maxStamina && Time.time > _regenStartTime)
         {
             currentStamina += staminaRegenRate * Time.deltaTime;
@@ -62,23 +66,106 @@ public class CharacterStats : MonoBehaviour
 
     public void TakeDamage(int damage)
     {
-        if (currentHealth <= 0) return; 
+        if (_isDead) return;
 
-        // --- FIRE TELEMETRY EVENT ---
-        // Using ?.Invoke checks if the Telemetry script is actually listening before firing
-        // to prevent crashes if the Telemetry script is disabled.
         OnTakeDamage?.Invoke(damage);
-
         currentHealth -= damage;
         
-        if (currentHealth < 0) currentHealth = 0;
+        if (currentHealth <= 0)
+        {
+            currentHealth = 0;
+            Die();
+        }
 
         UpdateUI();
+    }
 
-        if (currentHealth == 0)
+    private void Die()
+    {
+        if (_isDead) return; 
+        _isDead = true;
+        
+        // 1. Play Animation
+        if (_animator != null) 
         {
-            Debug.Log(gameObject.name + " has been defeated!");
+            // Clear any hit triggers so they don't override death
+            _animator.ResetTrigger("Hit"); 
+            _animator.SetTrigger(DeathTrigger);
         }
+
+        // 2. Disable Physics/Movement
+        if (_agent != null) 
+        {
+            _agent.isStopped = true;
+            _agent.enabled = false; 
+        }
+
+        if (_collider != null) _collider.enabled = false;
+        
+        CharacterController cc = GetComponent<CharacterController>();
+        if(cc != null) cc.enabled = false;
+
+        // 3. Game Over Screen
+        if (GameManager.Instance != null)
+        {
+            GameManager.Instance.TriggerGameOver(!isPlayer); 
+        }
+    }
+
+    public void ResetStats()
+    {
+        _isDead = false;
+        currentHealth = maxHealth;
+        currentStamina = maxStamina;
+        
+        // 1. Reset External Scripts (Boss AI / Player Movement)
+        SkeletonAI bossAI = GetComponent<SkeletonAI>();
+        if (bossAI != null) bossAI.ResetAI();
+
+        Walk playerWalk = GetComponent<Walk>();
+        if (playerWalk != null) playerWalk.IsMovementLocked = false;
+
+        // 2. Enable Components & Teleport
+        if (_collider != null) _collider.enabled = true;
+        
+        CharacterController cc = GetComponent<CharacterController>();
+        if(cc != null) cc.enabled = true; // Must be enabled to move
+
+        if (_agent != null) 
+        {
+            _agent.enabled = true;
+            _agent.Warp(_startPosition); 
+            _agent.isStopped = false;
+        }
+        else if (cc != null)
+        {
+            // CC override
+            cc.enabled = false; 
+            transform.position = _startPosition;
+            transform.rotation = _startRotation;
+            cc.enabled = true;
+        }
+        else 
+        {
+            transform.position = _startPosition;
+            transform.rotation = _startRotation;
+        }
+
+        // 3. Nuclear Animator Reset
+        if (_animator != null)
+        {
+            // Rebind resets the animator to its start state (Entry)
+            _animator.Rebind(); 
+            
+            // Just in case Rebind didn't clear triggers (Unity version dependent)
+            _animator.ResetTrigger(DeathTrigger);
+            _animator.ResetTrigger("Hit");
+            
+            // Force state
+            _animator.Play("Locomotion");
+        }
+
+        UpdateUI();
     }
 
     public bool UseStamina(float amount)
@@ -88,54 +175,31 @@ public class CharacterStats : MonoBehaviour
         if (currentStamina >= amount)
         {
             currentStamina -= amount;
-            
-            // LOGIC: Did we hit 0?
             if (currentStamina <= 0.1f) 
             {
                 currentStamina = 0;
-                // Apply the longer "Exhaustion" penalty
                 _regenStartTime = Time.time + exhaustionDelay;
             }
             else
             {
-                // Apply the standard delay
                 _regenStartTime = Time.time + staminaRegenDelay;
             }
-
             UpdateUI();
             return true; 
         }
-        
-        return false; // Not enough stamina
+        return false; 
     }
 
-    // --- NEW: Helper to force a pause (used by Guard Break in PlayerControl) ---
     public void PauseStaminaRegen(float duration)
     {
-        // Push the regen start time into the future
         float targetTime = Time.time + duration;
-        
-        // Only update if this new pause is longer than the current wait
-        if (targetTime > _regenStartTime)
-        {
-            _regenStartTime = targetTime;
-        }
+        if (targetTime > _regenStartTime) _regenStartTime = targetTime;
     }
 
     private void UpdateUI()
     {
-        if (healthSlider != null)
-        {
-            healthSlider.value = (float)currentHealth / maxHealth;
-        }
-        if (healthText != null)
-        {
-            healthText.text = $"{currentHealth} / {maxHealth}";
-        }
-
-        if (staminaSlider != null)
-        {
-            staminaSlider.value = currentStamina / maxStamina;
-        }
+        if (healthSlider != null) healthSlider.value = (float)currentHealth / maxHealth;
+        if (healthText != null) healthText.text = $"{currentHealth} / {maxHealth}";
+        if (staminaSlider != null) staminaSlider.value = currentStamina / maxStamina;
     }
 }

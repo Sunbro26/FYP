@@ -44,7 +44,7 @@ public class SkeletonAI : MonoBehaviour
         [Header("Damage Stats")]
         public int damage = 15;
         public float blockStaminaCost = 20f;
-    }   
+    }
 
     [Header("Configuration")]
     public AIPersona currentPersona;
@@ -73,6 +73,7 @@ public class SkeletonAI : MonoBehaviour
     public static event System.Action OnParrySuccess; 
 
     // --- Internals ---
+    private CharacterStats _myStats;
     private Color _originalSwordColor; 
     private Material _swordMaterialInstance; 
     private string _colorPropertyName; 
@@ -105,6 +106,8 @@ public class SkeletonAI : MonoBehaviour
     {
         _agent = GetComponent<NavMeshAgent>();
         _animator = GetComponent<Animator>();
+        _myStats = GetComponent<CharacterStats>();
+
         GameObject p = GameObject.FindGameObjectWithTag("Player");
         if (p) _target = p.transform;
 
@@ -125,6 +128,9 @@ public class SkeletonAI : MonoBehaviour
 
     void Update()
     {
+        // If I am dead, do absolutely nothing.
+        if (_myStats != null && _myStats.IsDead) return;
+
         UpdateDebugVisuals(); 
         if (_target == null) return;
 
@@ -409,16 +415,21 @@ public class SkeletonAI : MonoBehaviour
     // --- FLINCH LOGIC (From MultipleAttacks Branch) ---
     public void TakeHit()
     {
-        // Hyper-Armor check
+        // --- THE FIX ---
+        // If dead, ignore the hit completely.
+        if (_myStats != null && _myStats.IsDead) return;
+        // ---------------
+
         if (_isActionLocked) return;
 
         StopAllCoroutines(); 
         _agent.isStopped = true;
         _isActionLocked = true; 
 
-        //_animator.SetTrigger(HitTrigger);
+        _animator.SetTrigger(HitTrigger);
         StartCoroutine(RecoverFromHit());
     }
+
 
     public void RegisterHit() { if (_currentExecutingAttack != null) OnEnemyAttackSuccess?.Invoke(_currentExecutingAttack.name); }
     
@@ -502,4 +513,21 @@ public class SkeletonAI : MonoBehaviour
     void UpdateDebugVisuals() { if (_swordMaterialInstance) _swordMaterialInstance.SetColor(_colorPropertyName, canDealDamage ? Color.red : _originalSwordColor); }
     
     void OnDrawGizmos() { /* Gizmo logic can go here if needed */ }
+
+    // --- RESET LOGIC (Called by CharacterStats) ---
+    public void ResetAI()
+    {
+        StopAllCoroutines();
+        _isActionLocked = false;
+        canDealDamage = false;
+        _currentExecutingAttack = null;
+        _plannedAttack = null;
+        _decisionTimer = 0;
+        
+        // Reset Visuals
+        UpdateDebugVisuals();
+        
+        // Reset State
+        SwitchState(AIState.Idle);
+    }
 }

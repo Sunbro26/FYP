@@ -4,6 +4,8 @@ using UnityEngine.InputSystem;
 [RequireComponent(typeof(CharacterController))]
 public class Walk : MonoBehaviour
 {
+    private CharacterStats _stats;
+
     public float speed = 5f;
     public float rotationSpeed = 720f;
 
@@ -27,6 +29,7 @@ public class Walk : MonoBehaviour
         cameraTransform = Camera.main.transform;
         IsMovementLocked = false; // Player can move at the start
         lockOn = GetComponent<LockOn>();
+        _stats = GetComponent<CharacterStats>();
     }
 
     public void OnMove(InputAction.CallbackContext context)
@@ -36,6 +39,7 @@ public class Walk : MonoBehaviour
 
     void Update()
     {
+        if (_stats != null && _stats.IsDead) return;
         // --- NEW: If movement is locked, do nothing and exit the Update loop early ---
         if (IsMovementLocked)
         {
