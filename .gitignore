@@ -32,3 +32,4 @@ python-envs/*
 .venv
 
 config/
+Assets/ML-Agents/Timers/MainStage_timers.json

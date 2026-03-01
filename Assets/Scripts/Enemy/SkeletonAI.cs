@@ -405,7 +405,7 @@ public class SkeletonAI : MonoBehaviour
         _agent.isStopped = true;
         _isActionLocked = true; 
 
-        _animator.SetTrigger(HitTrigger);
+        //_animator.SetTrigger(HitTrigger);
         StartCoroutine(RecoverFromHit());
     }
 
