@@ -79,7 +79,7 @@ public class SkeletonAI : MonoBehaviour
     public AIState currentState;
     private NavMeshAgent _agent;
     private Animator _animator;
-    private Transform _target;
+    public Transform _target;
     
     private EnemyAttack _plannedAttack; 
     private EnemyAttack _currentExecutingAttack; 
@@ -222,6 +222,7 @@ public class SkeletonAI : MonoBehaviour
         return null;
     }
 
+
     float CalculateAttackScore(EnemyAttack attack, float dist)
     {
         float score = 10f; 
@@ -363,11 +364,21 @@ public class SkeletonAI : MonoBehaviour
             if (remaining > 0) yield return new WaitForSeconds(remaining);
         }
 
+        float retreatChance = (1.0f - currentPersona.aggression) + currentPersona.fear;
+        
+        if (Random.value < retreatChance) 
+        {
+            SwitchState(AIState.Retreating);
+        }
+        else 
+        {
+            SwitchState(AIState.Strategizing);
+            // Soft-reset timer so an aggressive AI can chain attacks faster
+            _decisionTimer = currentPersona.decisionFrequency * 0.5f; 
+        }
+
         _plannedAttack = null; 
         _isActionLocked = false;
-        
-        if (Random.value < currentPersona.fear) SwitchState(AIState.Retreating);
-        else SwitchState(AIState.Strategizing);
     }
 
     // --- PARRY LOGIC ---

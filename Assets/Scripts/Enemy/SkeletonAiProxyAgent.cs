@@ -21,48 +21,49 @@ public class SkeletonAiProxyAgent : Agent
         if (skeletonBody != null) skeletonBody.useExternalAI = true;
     }
 
-    // --- 1. OBSERVATIONS (20 Floats) ---
-    public override void CollectObservations(VectorSensor sensor)
+public override void CollectObservations(VectorSensor sensor)
     {
-        if (playerTransform == null || telemetrySystem == null || skeletonBody == null)
+        if (skeletonBody._target == null || telemetrySystem == null)
         {
-            for(int i=0; i<20; i++) sensor.AddObservation(0f);
+            // Total: 20 base + 8 attacks = 28 floats
+            for(int i=0; i<28; i++) sensor.AddObservation(0f);
             return;
         }
 
-        // GROUP 1: Self State (3 Floats)
-        sensor.AddObservation(myStats != null ? myStats.currentHealth / myStats.maxHealth : 1f); 
-        sensor.AddObservation(skeletonBody.canDealDamage ? 1f : 0f); 
-        sensor.AddObservation(skeletonBody.currentState == SkeletonAI.AIState.Stunned ? 1f : 0f); 
+        // --- GROUP 1: Self State (2 Floats) ---
+        sensor.AddObservation((float)skeletonBody.currentState / 5f); // Normalized enum
+        sensor.AddObservation(skeletonBody.canDealDamage ? 1f : 0f);
 
-        // GROUP 2: Spatial Relationship (7 Floats)
-        float distance = Vector3.Distance(transform.position, playerTransform.position);
+        // --- GROUP 2: Physical/Spatial (7 Floats) ---
+        float distance = Vector3.Distance(transform.position, skeletonBody._target.position);
         sensor.AddObservation(distance);
-        sensor.AddObservation(transform.forward); // My Facing (3)
-        Vector3 dirToPlayer = (playerTransform.position - transform.position).normalized;
-        sensor.AddObservation(dirToPlayer); // Vector To Player (3)
+        sensor.AddObservation(transform.forward); // Facing (3)
+        sensor.AddObservation((skeletonBody._target.position - transform.position).normalized); // Dir to player (3)
 
-        // GROUP 3: Player Intent (6 Floats)
-        // We observe the player to learn when to retreat or attack
-        SkeletonAI playerAI = playerTransform.GetComponent<SkeletonAI>(); // If player uses same script
-        // Note: If player uses different scripts, reference PlayerAttack/PlayerBlock here
-        sensor.AddObservation(0f); // Placeholder for PlayerAttacking
-        sensor.AddObservation(0f); // Placeholder for PlayerBlocking
-        sensor.AddObservation(playerTransform.forward); // (3 floats)
-        
-        float facingDot = Vector3.Dot(transform.forward, playerTransform.forward);
-        sensor.AddObservation(facingDot); 
-
-        // GROUP 4: Telemetry & Movement (4 Floats)
-        Vector3 playerVel = (playerTransform.position - _lastPlayerPos) / Time.fixedDeltaTime;
-        sensor.AddObservation(playerVel.magnitude);
-        _lastPlayerPos = playerTransform.position;
-
+        // --- GROUP 3: Player Telemetry (Skills & Resources) (8 Floats) ---
         sensor.AddObservation(telemetrySystem.PlayerHealthPercentage_Agent);
-        sensor.AddObservation(telemetrySystem.RecentDamageDealt_Agent / 100f); 
-        sensor.AddObservation(telemetrySystem.RecentDamageReceived_Agent / 100f); 
+        sensor.AddObservation(telemetrySystem.PlayerStaminaPercentage_Agent);
+        sensor.AddObservation(telemetrySystem.PlayerEnemyDistanceChange_Agent); // Is player running away?
         
-        // Total = 20 Floats
+        sensor.AddObservation(telemetrySystem.ParrySuccessRate_Agent); // Is player a parry god?
+        sensor.AddObservation(telemetrySystem.DodgeSuccessRate_Agent);
+        sensor.AddObservation(telemetrySystem.BlockSuccessRate_Agent);
+        sensor.AddObservation(telemetrySystem.RelativeFacing_Agent); // Is player looking at me?
+        
+        sensor.AddObservation(telemetrySystem.RecentDamageDealtByPlayer_Agent / 100f); // Pressure check
+
+        // --- GROUP 4: Strategy Success Tracking (3 Floats) ---
+        // AI sees how well IT is doing
+        sensor.AddObservation(telemetrySystem.EnemyHealthPercentage_Agent);
+        sensor.AddObservation(telemetrySystem.RecentDamageReceivedByPlayer_Agent / 100f); // How much did I hit him?
+        sensor.AddObservation(telemetrySystem.TotalAttacks_Agent / 100f); // APM context
+
+        // --- GROUP 5: Per-Attack Success Rates (8 Floats) ---
+        // This is key for MultiGAIL to learn which "Modes" work best
+        foreach (var attack in skeletonBody.availableAttacks)
+        {
+            sensor.AddObservation(telemetrySystem.GetEnemyAttackSuccessRate(attack.name));
+        }
     }
 
     // --- 2. ACTIONS ---
@@ -101,10 +102,30 @@ public class SkeletonAiProxyAgent : Agent
         var continuous = actionsOut.ContinuousActions;
         var discrete = actionsOut.DiscreteActions;
 
-        // Simply turn off the Proxy flag so the original SkeletonAI logic runs
+        // 1. Tell the body to use its own internal C# Brain (The Utility System)
         skeletonBody.useExternalAI = false;
-        
-        // Note: In Heuristic mode, the Agent doesn't "do" anything, 
-        // it just lets the original script's Update() function take over.
+
+        // 2. SCRAPE MOVEMENT: Read what the C# script is currently doing
+        continuous[0] = skeletonBody.GetCurrentStrafe();
+        continuous[1] = skeletonBody.GetCurrentForward();
+
+        // 3. SCRAPE ATTACKS: 
+        // We need to know which attack index the C# script chose this frame.
+        // If the AI is in the "Attacking" state, we record that index.
+        discrete[0] = 0; // Default: No attack
+        if (skeletonBody.currentState == SkeletonAI.AIState.Attacking)
+        {
+            var currentAtk = skeletonBody.GetCurrentAttack();
+            if (currentAtk != null)
+            {
+                // Find the index of this attack in the library (+1 for 1-based ML index)
+                discrete[0] = skeletonBody.availableAttacks.IndexOf(currentAtk) + 1;
+            }
+        }
+        else if (skeletonBody.currentState == SkeletonAI.AIState.Retreating)
+        {
+            // Record the "Retreat" action (usually last index)
+            discrete[0] = skeletonBody.availableAttacks.Count + 1;
+        }
     }
 }

@@ -27,68 +27,33 @@ public class PlayerProxyAgent : Agent
     {
         if (enemyTransform == null || telemetrySystem == null)
         {
-            // Fallback padding (Must match final count!)
             for(int i=0; i<20; i++) sensor.AddObservation(0f);
             return;
         }
 
-        // --- GROUP 1: Self State (2 Floats) ---
+        // --- GROUP 1: Self Status (4 Floats) ---
         sensor.AddObservation(blockScript.IsBlocking ? 1f : 0f); 
         sensor.AddObservation(dodgeScript.IsInvincible ? 1f : 0f); 
+        sensor.AddObservation(telemetrySystem.PlayerHealthPercentage_Agent);
+        sensor.AddObservation(telemetrySystem.PlayerStaminaPercentage_Agent);
 
-        // --- GROUP 2: Spatial Relationship (7 Floats) ---
+        // --- GROUP 2: Physical/Spatial (7 Floats) ---
         float distance = Vector3.Distance(transform.position, enemyTransform.position);
         sensor.AddObservation(distance);
-        
-        // Critical: We send BOTH forward vectors.
-        // This lets the NN calculate angles (e.g., "Am I behind him?")
         sensor.AddObservation(transform.forward); // My Facing (3)
         Vector3 dirToEnemy = (enemyTransform.position - transform.position).normalized;
         sensor.AddObservation(dirToEnemy); // Vector To Enemy (3)
 
-        // --- GROUP 3: Enemy Intent (CRITICAL FOR DODGING) (6 Floats) ---
-        // 1. Is he attacking? (Use Telemetry or direct reference if possible)
-        // Ideally, read the Enemy's Animator state or a boolean from SkeletonAI
-        SkeletonAI enemyAI = enemyTransform.GetComponent<SkeletonAI>();
-        bool enemyAttacking = (enemyAI != null && enemyAI.canDealDamage); // Or use IsActionLocked
-        sensor.AddObservation(enemyAttacking ? 1f : 0f); 
+        // --- GROUP 3: Enemy Intent (The "Tell") (6 Floats) ---
+        sensor.AddObservation(telemetrySystem.EnemyFSMState_Agent); // Normalized State (0-1)
+        sensor.AddObservation(telemetrySystem.IsEnemyAttacking_Agent); // Current swing?
+        sensor.AddObservation(enemyTransform.forward); // Where is he looking? (3)
+        sensor.AddObservation(telemetrySystem.RelativeFacing_Agent); // Are we head-to-head? (1)
 
-        // 2. Enemy Facing (So we can dodge to his back/side)
-        sensor.AddObservation(enemyTransform.forward); // (3 floats)
-
-        // 3. Dot Product (Are we facing each other?)
-        // 1 = Face to Face, -1 = Back turned
-        float facingDot = Vector3.Dot(transform.forward, enemyTransform.forward);
-        sensor.AddObservation(facingDot); // (1 float)
-        
-        // 4. Enemy Velocity / Movement (Are they rushing me?)
-        // Simple proxy: Is he moving?
-        // (1 float)
-         Vector3 enemyVelocity = (enemyTransform.position - _lastEnemyPos) / Time.fixedDeltaTime;
-        float enemySpeed = enemyVelocity.magnitude;
-        
-        // Add to observations (Replaces NavMeshAgent logic)
-        sensor.AddObservation(enemySpeed);
-
-        // Update for next frame
-        _lastEnemyPos = enemyTransform.position;    
-
-
-        // --- GROUP 4: Telemetry / Performance (5 Floats) ---
-        sensor.AddObservation(telemetrySystem.PlayerHealthPercentage_Agent);
-        sensor.AddObservation(telemetrySystem.PlayerStaminaPercentage_Agent);
-        
-        // Dynamic feedback
-        sensor.AddObservation(telemetrySystem.PlayerEnemyDistanceChange_Agent); // Closing speed
-        sensor.AddObservation(telemetrySystem.RecentDamageDealt_Agent / 100f);  // Reward signal
-        sensor.AddObservation(telemetrySystem.RecentDamageReceived_Agent / 100f); // Punishment signal
-        
-        // RECALCULATE TOTAL:
-        // G1: 2
-        // G2: 7
-        // G3: 1 + 3 + 1 + 1 = 6
-        // G4: 5
-        // Total = 20. (Perfect match for your current setup!)
+        // --- GROUP 4: Performance Feedback (3 Floats) ---
+        sensor.AddObservation(telemetrySystem.PlayerEnemyDistanceChange_Agent); // Speed of approach
+        sensor.AddObservation(telemetrySystem.RecentDamageDealtByPlayer_Agent / 100f); // Positive reinforcement
+        sensor.AddObservation(telemetrySystem.RecentDamageReceivedByPlayer_Agent / 100f); // Negative reinforcement
     }
 
     // --- 2. ACTIONS (The Brain driving the Body) ---

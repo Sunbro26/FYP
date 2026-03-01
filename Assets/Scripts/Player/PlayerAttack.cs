@@ -6,6 +6,7 @@ using System;
 public class PlayerAttack : MonoBehaviour
 {
     public static event Action OnPlayerAttack; 
+    public static event Action OnPlayerHitEnemy;
 
     [Header("Attack Settings")]
     [SerializeField] float attackDuration = 0.8f;
@@ -90,6 +91,7 @@ public class PlayerAttack : MonoBehaviour
             if (enemyStats != null)
             {
                 enemyStats.TakeDamage(damageAmount);
+                OnPlayerHitEnemy.Invoke();
             }
             else
             {
