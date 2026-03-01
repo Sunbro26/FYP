@@ -40,6 +40,10 @@ public class PlayerControl : MonoBehaviour
 
     private void OnTriggerEnter(Collider other)
     {
+        // If I am already dead, ignore all hits.
+        if (_stats != null && _stats.IsDead) return;
+        // ------------------------
+
         if (other.gameObject.CompareTag("sword"))
         {
             SkeletonAI enemyScript = other.GetComponentInParent<SkeletonAI>();
@@ -121,8 +125,22 @@ public class PlayerControl : MonoBehaviour
             }
             else
             {
-                if (_stats != null) _stats.TakeDamage(incomingDamage); 
-                
+                // TAKE DAMAGE
+                if (_stats != null)
+                {
+                    _stats.TakeDamage(incomingDamage); 
+                }
+
+                // --- THE FIX ---
+                // Check if we died from that damage. If we are dead, DO NOT FLINCH.
+                if (_stats != null && _stats.IsDead)
+                {
+                    enemyScript.canDealDamage = false;
+                    return; // Stop here so we don't trigger "Hit"
+                }
+                // ----------------
+
+                // FLINCH LOGIC (Only runs if we are still alive)
                 if (_attackScript != null && !_attackScript.IsAttacking())
                 {
                     if (_animator != null) _animator.SetTrigger(HitTrigger);
