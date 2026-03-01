@@ -2081,6 +2081,7 @@ MonoBehaviour:
   dodgeDistance: 3.5
   dodgeDuration: 1
   dodgeRotationSpeed: 15
+  staminaCost: 15
   iFrameStartDelay: 0.1
   iFrameDuration: 0.4
 --- !u!114 &312797420
@@ -2134,9 +2135,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::NewMonoBehaviourScript
   blockAngle: 60
-  staminaCostPerBlock: 20
   blockSparksPrefab: {fileID: 5586424412945062105, guid: 4bf7e21e07939da47a0c878833139670, type: 3}
   blockEffectSpawnPoint: {fileID: 816128480}
+  guardBreakStunDuration: 2.5
 --- !u!114 &312797426
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2169,7 +2170,8 @@ MonoBehaviour:
   maxStamina: 100
   currentStamina: 100
   staminaRegenRate: 15
-  staminaRegenDelay: 1
+  staminaRegenDelay: 1.5
+  exhaustionDelay: 3
   staminaSlider: {fileID: 1404594191}
 --- !u!114 &312797429
 MonoBehaviour:
@@ -2753,6 +2755,7 @@ MonoBehaviour:
     optimalRange: 1
     rangeTolerance: 0.5
     weight: 5
+    isParriable: 1
     windUpTime: 0.75
     damageDuration: 1
     totalDuration: 2.1
@@ -2760,11 +2763,14 @@ MonoBehaviour:
     lastTimeUsed: -999
     tracksPlayerDuringWindup: 1
     useFootHitbox: 0
+    damage: 15
+    blockStaminaCost: 90
   - name: Dash Attack
     animationIndex: 1
     optimalRange: 2.5
     rangeTolerance: 1
     weight: 5
+    isParriable: 0
     windUpTime: 1
     damageDuration: 0.8
     totalDuration: 2.1
@@ -2772,11 +2778,14 @@ MonoBehaviour:
     lastTimeUsed: -999
     tracksPlayerDuringWindup: 1
     useFootHitbox: 0
+    damage: 15
+    blockStaminaCost: 90
   - name: Attack Horizontal
     animationIndex: 2
     optimalRange: 1.2
     rangeTolerance: 0.5
     weight: 5
+    isParriable: 1
     windUpTime: 0.65
     damageDuration: 1.2
     totalDuration: 2.2
@@ -2784,11 +2793,14 @@ MonoBehaviour:
     lastTimeUsed: -999
     tracksPlayerDuringWindup: 1
     useFootHitbox: 0
+    damage: 15
+    blockStaminaCost: 90
   - name: Attack Backhand
     animationIndex: 3
     optimalRange: 1
     rangeTolerance: 0.5
     weight: 5
+    isParriable: 1
     windUpTime: 0.6
     damageDuration: 1
     totalDuration: 3.1
@@ -2796,11 +2808,14 @@ MonoBehaviour:
     lastTimeUsed: -999
     tracksPlayerDuringWindup: 1
     useFootHitbox: 0
+    damage: 15
+    blockStaminaCost: 20
   - name: Attack 360
     animationIndex: 4
     optimalRange: 1.5
     rangeTolerance: 0.5
     weight: 2.47
+    isParriable: 1
     windUpTime: 0.75
     damageDuration: 1
     totalDuration: 2.45
@@ -2808,11 +2823,14 @@ MonoBehaviour:
     lastTimeUsed: -999
     tracksPlayerDuringWindup: 0
     useFootHitbox: 0
+    damage: 15
+    blockStaminaCost: 20
   - name: Combo Attack
     animationIndex: 5
     optimalRange: 0.8
     rangeTolerance: 0.5
     weight: 9.99
+    isParriable: 0
     windUpTime: 0.75
     damageDuration: 2.5
     totalDuration: 4.2
@@ -2820,11 +2838,14 @@ MonoBehaviour:
     lastTimeUsed: -999
     tracksPlayerDuringWindup: 1
     useFootHitbox: 0
+    damage: 15
+    blockStaminaCost: 20
   - name: Run Jump Attack
     animationIndex: 6
     optimalRange: 3
     rangeTolerance: 1
     weight: 1.99
+    isParriable: 0
     windUpTime: 1.5
     damageDuration: 0.85
     totalDuration: 3.6
@@ -2832,11 +2853,14 @@ MonoBehaviour:
     lastTimeUsed: -999
     tracksPlayerDuringWindup: 1
     useFootHitbox: 0
+    damage: 15
+    blockStaminaCost: 20
   - name: Kick
     animationIndex: 7
     optimalRange: 1
     rangeTolerance: 0.5
     weight: 5
+    isParriable: 0
     windUpTime: 0.5
     damageDuration: 0.4
     totalDuration: 1.85
@@ -2844,6 +2868,8 @@ MonoBehaviour:
     lastTimeUsed: -999
     tracksPlayerDuringWindup: 1
     useFootHitbox: 1
+    damage: 15
+    blockStaminaCost: 20
   swordMesh: {fileID: 1909943965}
   swordBone: {fileID: 1505110766}
   footBone: {fileID: 1562482256}
@@ -2900,6 +2926,7 @@ MonoBehaviour:
   currentStamina: 0
   staminaRegenRate: 15
   staminaRegenDelay: 1
+  exhaustionDelay: 2.5
   staminaSlider: {fileID: 0}
 --- !u!114 &385033938
 MonoBehaviour:

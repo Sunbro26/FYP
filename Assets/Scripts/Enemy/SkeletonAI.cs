@@ -26,6 +26,7 @@ public class SkeletonAI : MonoBehaviour
         public float optimalRange;      
         public float rangeTolerance = 0.5f; 
         public float weight = 1.0f;
+        public bool isParriable = true;
         
         [Header("Timing")]
         public float windUpTime;      
@@ -39,6 +40,11 @@ public class SkeletonAI : MonoBehaviour
         [Header("Quirks")]
         public bool tracksPlayerDuringWindup = true;
         public bool useFootHitbox = false;
+        [Header("Damage Stats")]
+        [Tooltip("How much HP this attack takes if it hits.")]
+        public int damage = 15;
+        [Tooltip("How much Player Stamina this drains if Blocked.")]
+        public float blockStaminaCost = 20f;
     }   
 
     [Header("Configuration")]
@@ -362,11 +368,38 @@ public class SkeletonAI : MonoBehaviour
         SwitchState(AIState.Stunned); OnParrySuccess?.Invoke();
         StartCoroutine(ParryRoutine());
     }
-    IEnumerator ParryRoutine() {
+    IEnumerator ParryRoutine() 
+    {
+        // 1. Clear any pending triggers so they don't fire late
         _animator.ResetTrigger(TriggerAttack);
-        _animator.SetFloat(AttackSpeedHash, -1f); yield return new WaitForSeconds(0.4f);
-        _animator.SetFloat(AttackSpeedHash, 0f); yield return new WaitForSeconds(1.5f);
-        _animator.SetFloat(AttackSpeedHash, 1f); _isActionLocked = false; SwitchState(AIState.Retreating);
+
+        // 2. THE REBOUND (Reverse the swing quickly)
+        // We set it to -1.5f so it violently bounces backward, rather than just playing in slow reverse.
+        _animator.SetFloat(AttackSpeedHash, -1.5f); 
+        
+        // Wait for just 0.3 seconds. This only rewinds the very end of the swing.
+        yield return new WaitForSeconds(0.3f);
+
+        // 3. RESET ATTACK SPEED
+        // Vital so future attacks don't stay broken
+        _animator.SetFloat(AttackSpeedHash, 1f); 
+
+        // 4. THE STUN
+        // We force the animator to abort the attack and smoothly blend into the Stun animation.
+        _animator.CrossFade("Stun", 0.15f);
+
+        // Wait for the duration of your Stun animation (Adjust this 1.5f to match your actual clip length)
+        yield return new WaitForSeconds(1.1f);
+
+        // 5. RECOVERY
+        // Smoothly blend back into the moving/idle blend tree. This prevents the old attack from continuing!
+        _animator.CrossFade("Locomotion", 0.25f);
+        
+        // Unlock AI logic
+        _isActionLocked = false; 
+
+        // Force the boss to back off after being humiliated
+        SwitchState(AIState.Retreating);
     }
 
     void SwitchState(AIState newState) { if (currentState != newState) { currentState = newState; _decisionTimer = 0; } }
@@ -450,4 +483,9 @@ public class SkeletonAI : MonoBehaviour
     public float GetCurrentStrafe() => _animator.GetFloat(MoveX);
     public float GetCurrentForward() => _animator.GetFloat(MoveZ);
     public bool IsAttacking() => _isActionLocked; // Or check state
+    // --- Helper for PlayerControl to get stats ---
+    public EnemyAttack GetCurrentAttack()
+    {
+        return _currentExecutingAttack;
+    }
 }

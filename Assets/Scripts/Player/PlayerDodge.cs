@@ -13,6 +13,10 @@ public class PlayerDodge : MonoBehaviour
     public float dodgeDistance = 5f;
     public float dodgeDuration = 0.6f;
     public float dodgeRotationSpeed = 15f;
+    
+    // --- NEW: STAMINA SETTINGS ---[Header("Stamina Settings")]
+    [Tooltip("How much stamina it costs to perform a dodge roll.")]
+    public float staminaCost = 15f; 
 
     [Header("I-Frame Settings")]
     public float iFrameStartDelay = 0.2f; 
@@ -26,6 +30,9 @@ public class PlayerDodge : MonoBehaviour
     private Walk _walkScript;
     private PlayerAttack _attackScript;
     private Transform _cameraTransform;
+    
+    // --- NEW: STATS REFERENCE ---
+    private CharacterStats _stats;
 
     private bool _isDodging = false;
     private static readonly int DodgeTrigger = Animator.StringToHash("Dodge");
@@ -37,6 +44,9 @@ public class PlayerDodge : MonoBehaviour
         _walkScript = GetComponent<Walk>();
         _attackScript = GetComponent<PlayerAttack>();
         _cameraTransform = Camera.main.transform;
+        
+        // --- NEW: INITIALIZE STATS ---
+        _stats = GetComponent<CharacterStats>();
     }
 
     public bool IsDodging() => _isDodging;
@@ -45,8 +55,12 @@ public class PlayerDodge : MonoBehaviour
     {
         if (context.started && !_isDodging && (_attackScript == null || !_attackScript.IsAttacking()))
         {
-            // Check stamina here if you have it
-            // if (!_stats.UseStamina(cost)) return;
+            // --- NEW: STAMINA CHECK ---
+            if (_stats != null && !_stats.UseStamina(staminaCost))
+            {
+                Debug.Log("Not enough stamina to dodge!");
+                return; // Stop the dodge from happening
+            }
 
             if (_walkScript != null) _walkScript.IsMovementLocked = true;
             
@@ -57,7 +71,7 @@ public class PlayerDodge : MonoBehaviour
         }
     }
 
-    // --- NEW: CALL THIS FROM YOUR HEALTH SCRIPT ---
+    // --- CALL THIS FROM YOUR HEALTH SCRIPT ---
     public void RegisterPerfectDodge()
     {
         // Only count it if we are actually currently invincible
@@ -121,15 +135,21 @@ public class PlayerDodge : MonoBehaviour
         IsInvincible = false;
     }
     
-// Inside PlayerDodge.cs
-public void AttemptDodge()
-{
-    if (!_isDodging && (_attackScript == null || !_attackScript.IsAttacking()))
+    // Inside PlayerDodge.cs
+    public void AttemptDodge()
     {
-        // ... (copy rest of OnDodge logic) ...
-        if (_walkScript != null) _walkScript.IsMovementLocked = true;
-        OnDodgeAttempt?.Invoke();
-        StartCoroutine(DodgeSequence());
+        if (!_isDodging && (_attackScript == null || !_attackScript.IsAttacking()))
+        {
+            // --- NEW: STAMINA CHECK FOR THE SECONDARY METHOD ---
+            if (_stats != null && !_stats.UseStamina(staminaCost))
+            {
+                Debug.Log("Not enough stamina to dodge!");
+                return; 
+            }
+
+            if (_walkScript != null) _walkScript.IsMovementLocked = true;
+            OnDodgeAttempt?.Invoke();
+            StartCoroutine(DodgeSequence());
+        }
     }
-}
 }

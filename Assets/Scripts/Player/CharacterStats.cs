@@ -6,26 +6,35 @@ using System;
 public class CharacterStats : MonoBehaviour
 {
     [Header("Identity")]
-    public bool isPlayer = false; // Check this for the Player, uncheck for Boss
+    public bool isPlayer = false; 
 
     [Header("Health Settings")]
     public int maxHealth = 100;
     public int currentHealth;
     public Slider healthSlider;
-    public TMP_Text healthText; // Optional for Boss
+    public TMP_Text healthText; 
 
     [Header("Stamina Settings")]
     public float maxStamina = 100f;
     public float currentStamina;
     public float staminaRegenRate = 15f;
-    public float staminaRegenDelay = 1.0f; // Time before regen starts
-    public Slider staminaSlider; // Assign this only for the Player
-
-    private float _lastStaminaUseTime;
     
-    // Flag to check if dead (or defeated)
+    [Tooltip("Standard delay after using stamina before it comes back.")]
+    public float staminaRegenDelay = 1.0f; // Renamed from normalRegenDelay to match your old script
+    
+    [Tooltip("Penalty delay when stamina hits exactly 0.")]
+    public float exhaustionDelay = 2.5f; // New feature
+
+    public Slider staminaSlider; 
+
+    // --- Internal State ---
+    // We switched from _lastStaminaUseTime to _regenStartTime 
+    // because it makes pausing regeneration (Guard Break) much easier to calculate.
+    private float _regenStartTime; 
+    
     public bool IsDead => currentHealth <= 0;
 
+    // --- TEAMMATE'S TELEMETRY EVENT (PRESERVED) ---
     public event Action<int> OnTakeDamage;
 
     void Awake()
@@ -33,6 +42,7 @@ public class CharacterStats : MonoBehaviour
         currentHealth = maxHealth;
         currentStamina = maxStamina;
     }
+
     void Start()
     {
         UpdateUI();
@@ -41,7 +51,8 @@ public class CharacterStats : MonoBehaviour
     void Update()
     {
         // Stamina Regeneration Logic
-        if (currentStamina < maxStamina && Time.time > _lastStaminaUseTime + staminaRegenDelay)
+        // We only regen if we are below max AND the current time is past the allowed start time
+        if (currentStamina < maxStamina && Time.time > _regenStartTime)
         {
             currentStamina += staminaRegenRate * Time.deltaTime;
             if (currentStamina > maxStamina) currentStamina = maxStamina;
@@ -51,12 +62,15 @@ public class CharacterStats : MonoBehaviour
 
     public void TakeDamage(int damage)
     {
-        if (currentHealth <= 0) return; // Already at 0
+        if (currentHealth <= 0) return; 
 
-        OnTakeDamage.Invoke(damage);
+        // --- FIRE TELEMETRY EVENT ---
+        // Using ?.Invoke checks if the Telemetry script is actually listening before firing
+        // to prevent crashes if the Telemetry script is disabled.
+        OnTakeDamage?.Invoke(damage);
+
         currentHealth -= damage;
         
-        // Clamp to 0 so we don't get negative numbers
         if (currentHealth < 0) currentHealth = 0;
 
         UpdateUI();
@@ -64,29 +78,52 @@ public class CharacterStats : MonoBehaviour
         if (currentHealth == 0)
         {
             Debug.Log(gameObject.name + " has been defeated!");
-            // Add death animation logic here later
         }
     }
 
     public bool UseStamina(float amount)
     {
-        // Bosses usually don't use stamina, so we always return true for them
-        if (!isPlayer) return true;
+        if (!isPlayer) return true; 
 
         if (currentStamina >= amount)
         {
             currentStamina -= amount;
-            _lastStaminaUseTime = Time.time;
+            
+            // LOGIC: Did we hit 0?
+            if (currentStamina <= 0.1f) 
+            {
+                currentStamina = 0;
+                // Apply the longer "Exhaustion" penalty
+                _regenStartTime = Time.time + exhaustionDelay;
+            }
+            else
+            {
+                // Apply the standard delay
+                _regenStartTime = Time.time + staminaRegenDelay;
+            }
+
             UpdateUI();
-            return true; // Stamina used successfully
+            return true; 
         }
         
         return false; // Not enough stamina
     }
 
+    // --- NEW: Helper to force a pause (used by Guard Break in PlayerControl) ---
+    public void PauseStaminaRegen(float duration)
+    {
+        // Push the regen start time into the future
+        float targetTime = Time.time + duration;
+        
+        // Only update if this new pause is longer than the current wait
+        if (targetTime > _regenStartTime)
+        {
+            _regenStartTime = targetTime;
+        }
+    }
+
     private void UpdateUI()
     {
-        // Update Health UI
         if (healthSlider != null)
         {
             healthSlider.value = (float)currentHealth / maxHealth;
@@ -96,7 +133,6 @@ public class CharacterStats : MonoBehaviour
             healthText.text = $"{currentHealth} / {maxHealth}";
         }
 
-        // Update Stamina UI (Player only usually)
         if (staminaSlider != null)
         {
             staminaSlider.value = currentStamina / maxStamina;
