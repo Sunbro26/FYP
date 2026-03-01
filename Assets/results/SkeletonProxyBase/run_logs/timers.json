@@ -1,0 +1,42 @@
+{
+    "name": "root",
+    "metadata": {
+        "timer_format_version": "0.1.0",
+        "start_time_seconds": "1772401814",
+        "python_version": "3.10.12 (main, Dec  7 2025, 14:29:16) [MSC v.1944 64 bit (AMD64)]",
+        "command_line_arguments": "D:\\Uni\\FYP\\FYP\\.venv\\Scripts\\mlagents-learn config/skeleton_multigail.yaml --run-id=SkeletonProxyBase --force --time-scale 2",
+        "mlagents_version": "1.1.0",
+        "mlagents_envs_version": "1.1.0",
+        "communication_protocol_version": "1.5.0",
+        "pytorch_version": "2.1.1+cpu",
+        "numpy_version": "1.23.5",
+        "end_time_seconds": "1772401827"
+    },
+    "total": 13.31181480000032,
+    "count": 1,
+    "self": 0.017879099998936,
+    "children": {
+        "run_training.setup": {
+            "total": 0.14328890000069805,
+            "count": 1,
+            "self": 0.14328890000069805
+        },
+        "TrainerController.start_learning": {
+            "total": 13.150646800000686,
+            "count": 1,
+            "self": 0.00035260000095149735,
+            "children": {
+                "TrainerController._reset_env": {
+                    "total": 13.150271399999838,
+                    "count": 1,
+                    "self": 13.150271399999838
+                },
+                "TrainerController._save_models": {
+                    "total": 2.27999998969608e-05,
+                    "count": 1,
+                    "self": 2.27999998969608e-05
+                }
+            }
+        }
+    }
+}

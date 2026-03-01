@@ -23,15 +23,16 @@ public class PlayerProxyAgent : Agent
 
     // --- 1. OBSERVATIONS (The Inputs) ---
     // Total Size: 20 Floats
-    public override void CollectObservations(VectorSensor sensor)
+public override void CollectObservations(VectorSensor sensor)
     {
         if (enemyTransform == null || telemetrySystem == null)
         {
-            for(int i=0; i<20; i++) sensor.AddObservation(0f);
+            // Fallback padding (Must match 22!)
+            for(int i=0; i<22; i++) sensor.AddObservation(0f);
             return;
         }
 
-        // --- GROUP 1: Self Status (4 Floats) ---
+        // --- GROUP 1: Self State (4 Floats) ---
         sensor.AddObservation(blockScript.IsBlocking ? 1f : 0f); 
         sensor.AddObservation(dodgeScript.IsInvincible ? 1f : 0f); 
         sensor.AddObservation(telemetrySystem.PlayerHealthPercentage_Agent);
@@ -40,20 +41,26 @@ public class PlayerProxyAgent : Agent
         // --- GROUP 2: Physical/Spatial (7 Floats) ---
         float distance = Vector3.Distance(transform.position, enemyTransform.position);
         sensor.AddObservation(distance);
-        sensor.AddObservation(transform.forward); // My Facing (3)
+        sensor.AddObservation(transform.forward); // Vector3 (3 floats)
         Vector3 dirToEnemy = (enemyTransform.position - transform.position).normalized;
-        sensor.AddObservation(dirToEnemy); // Vector To Enemy (3)
+        sensor.AddObservation(dirToEnemy); // Vector3 (3 floats)
 
-        // --- GROUP 3: Enemy Intent (The "Tell") (6 Floats) ---
-        sensor.AddObservation(telemetrySystem.EnemyFSMState_Agent); // Normalized State (0-1)
-        sensor.AddObservation(telemetrySystem.IsEnemyAttacking_Agent); // Current swing?
-        sensor.AddObservation(enemyTransform.forward); // Where is he looking? (3)
-        sensor.AddObservation(telemetrySystem.RelativeFacing_Agent); // Are we head-to-head? (1)
+        // --- GROUP 3: Enemy Intent (THE TELL) (8 Floats) ---
+        sensor.AddObservation(telemetrySystem.EnemyFSMState_Agent);    // 1
+        sensor.AddObservation(telemetrySystem.IsEnemyAttacking_Agent); // 1
+        sensor.AddObservation(enemyTransform.forward);                // Vector3 (3)
+        sensor.AddObservation(telemetrySystem.RelativeFacing_Agent);  // 1
+        
+        // --- NEW DATA FOR PARRY/DODGE TIMING ---
+        sensor.AddObservation(telemetrySystem.EnemyAttackID_Agent);       // 1
+        sensor.AddObservation(telemetrySystem.EnemyAttackProgress_Agent); // 1
 
         // --- GROUP 4: Performance Feedback (3 Floats) ---
-        sensor.AddObservation(telemetrySystem.PlayerEnemyDistanceChange_Agent); // Speed of approach
-        sensor.AddObservation(telemetrySystem.RecentDamageDealtByPlayer_Agent / 100f); // Positive reinforcement
-        sensor.AddObservation(telemetrySystem.RecentDamageReceivedByPlayer_Agent / 100f); // Negative reinforcement
+        sensor.AddObservation(telemetrySystem.PlayerEnemyDistanceChange_Agent);
+        sensor.AddObservation(telemetrySystem.RecentDamageDealtByPlayer_Agent / 100f); 
+        sensor.AddObservation(telemetrySystem.RecentDamageReceivedByPlayer_Agent / 100f); 
+
+        // RECALCULATE TOTAL: 4 + 7 + 8 + 3 = 22 Floats.
     }
 
     // --- 2. ACTIONS (The Brain driving the Body) ---

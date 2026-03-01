@@ -19,13 +19,13 @@ behaviors:
       gail:
         gamma: 0.99
         strength: 0.5
-        demo_path: config/PlayerAggressive_4.demo # <--- YOUR FILE
+        demo_path: config/PlayerAggressive_50.demo # <--- YOUR FILE
     
     # Behavioral Cloning is CRITICAL for Proxies.
     # It forces the agent to copy your inputs directly.
     behavioral_cloning:
       strength: 0.5         # 50% Cloning, 50% RL optimization
-      demo_path: config/PlayerAggressive_4.demo
+      demo_path: config/PlayerAggressive_50.demo
       steps: 50000          # Clone hard for the first 50k steps
       
     max_steps: 500000

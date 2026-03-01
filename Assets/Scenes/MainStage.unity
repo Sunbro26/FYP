@@ -2167,10 +2167,10 @@ MonoBehaviour:
   currentHealth: 100
   healthSlider: {fileID: 101666507}
   healthText: {fileID: 0}
-  maxStamina: 100
-  currentStamina: 100
-  staminaRegenRate: 15
-  staminaRegenDelay: 1.5
+  maxStamina: 150
+  currentStamina: 150
+  staminaRegenRate: 25
+  staminaRegenDelay: 1
   exhaustionDelay: 3
   staminaSlider: {fileID: 1404594191}
 --- !u!114 &312797429
@@ -2217,7 +2217,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Unity.ML-Agents::Unity.MLAgents.Policies.BehaviorParameters
   m_BrainParameters:
-    VectorObservationSize: 20
+    VectorObservationSize: 22
     NumStackedVectorObservations: 17
     m_ActionSpec:
       m_NumContinuousActions: 2
@@ -2228,7 +2228,7 @@ MonoBehaviour:
     hasUpgradedBrainParametersWithActionSpec: 1
   m_Model: {fileID: 0}
   m_InferenceDevice: 0
-  m_BehaviorType: 0
+  m_BehaviorType: 1
   m_BehaviorName: PlayerProxy
   TeamId: 0
   m_UseChildSensors: 1
@@ -2761,12 +2761,12 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SkeletonAI
   currentPersona:
-    aggression: 0.9
-    fear: 0.2
-    decisionFrequency: 2
-    preferredCombatRange: 1.5
+    aggression: 0.843
+    fear: 0.202
+    decisionFrequency: 1.52
+    preferredCombatRange: 1.25
   sensorRadius: 15
-  circleSpeed: 1.25
+  circleSpeed: 1.15
   useExternalAI: 0
   availableAttacks:
   - name: Basic Slash
@@ -2895,6 +2895,7 @@ MonoBehaviour:
   showDebugGizmos: 0
   hitRadius: 0.5
   currentState: 0
+  _target: {fileID: 0}
   canDealDamage: 0
 --- !u!136 &385033933
 CapsuleCollider:
@@ -2937,8 +2938,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CharacterStats
   isPlayer: 0
-  maxHealth: 300
-  currentHealth: 300
+  maxHealth: 1500
+  currentHealth: 1500
   healthSlider: {fileID: 1426010340}
   healthText: {fileID: 0}
   maxStamina: 100
@@ -2995,7 +2996,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Unity.ML-Agents::Unity.MLAgents.Policies.BehaviorParameters
   m_BrainParameters:
-    VectorObservationSize: 20
+    VectorObservationSize: 28
     NumStackedVectorObservations: 1
     m_ActionSpec:
       m_NumContinuousActions: 2
@@ -3041,10 +3042,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f2902496c0120472b90269f94a0aec7e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.ML-Agents::Unity.MLAgents.Demonstrations.DemonstrationRecorder
-  Record: 0
+  Record: 1
   NumStepsToRecord: 0
-  DemonstrationName: 
-  DemonstrationDirectory: 
+  DemonstrationName: SkeletonDefensive
+  DemonstrationDirectory: ./config
 --- !u!1001 &391245703
 PrefabInstance:
   m_ObjectHideFlags: 0

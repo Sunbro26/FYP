@@ -13,7 +13,6 @@ public class SkeletonAiProxyAgent : Agent
     public Transform playerTransform;
     public Telemetry telemetrySystem; 
 
-    private Vector3 _lastPlayerPos;
 
     public override void Initialize()
     {

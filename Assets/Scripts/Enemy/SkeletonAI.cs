@@ -50,6 +50,7 @@ public class SkeletonAI : MonoBehaviour
     public AIPersona currentPersona;
     public float sensorRadius = 15f;
     public float circleSpeed = 2.5f;
+    private float _attackTimer = 0f;
 
     // --- PROXY AGENT MODIFICATION ---
     [Header("AI Control")]
@@ -144,7 +145,7 @@ public class SkeletonAI : MonoBehaviour
         if (currentState == AIState.Strategizing)
         {
             _decisionTimer += Time.deltaTime;
-            // Use the "Smart" Heuristic from the ML Branch
+            
             RunHeuristicDecisionLogic();
         }
         else
@@ -159,21 +160,24 @@ public class SkeletonAI : MonoBehaviour
     // --- HEURISTIC DECISION LOGIC (ML Branch) ---
     void RunHeuristicDecisionLogic()
     {
-        if (_decisionTimer > currentPersona.decisionFrequency)
+        float adjustedFrequency = currentPersona.decisionFrequency * (1.1f - currentPersona.aggression);
+        
+        if (_decisionTimer > adjustedFrequency)
         {
             float dist = Vector3.Distance(transform.position, _target.position);
             
-            // 1. Panic Check (Using Smart Random selection from ML Branch)
-            if (dist < 1.5f && Random.value < currentPersona.aggression)
+            // --- THE FIX: AGGRESSION GATE ---
+            // If aggression is 0.2, 80% of the time the AI will skip its attack window
+            // and just keep circling or choose to retreat instead.
+            if (Random.value > currentPersona.aggression)
             {
-                EnemyAttack panicAttack = GetRandomFastAttack();
-                if (panicAttack != null)
-                {
-                    StartAttack(panicAttack);
-                    return;
-                }
+                Debug.Log("AI: Too cautious to attack. Continuing to Strategize.");
+                _decisionTimer = 0; // Reset timer to wait again
+                
+                // If fear is high, force a retreat instead of just standing there
+                if (Random.value < currentPersona.fear) SwitchState(AIState.Retreating);
+                return; 
             }
-
             // 2. Smart Choice (Utility System)
             EnemyAttack bestMove = ChooseSmartAttack();
             
@@ -239,9 +243,14 @@ public class SkeletonAI : MonoBehaviour
             score += 40f; 
             if (distDiff <= attack.rangeTolerance) score += 20f;
         }
-        else score -= distDiff * 3f; 
+         if (dist < 2.0f)
+        {
+            score -= currentPersona.fear * 50f; 
+        }
+        float penaltyMultiplier = Mathf.Lerp(10f, 2f, currentPersona.aggression);
+        score -= distDiff * penaltyMultiplier;
 
-        score += attack.weight * 5f; 
+        score += (attack.weight * 5f) * currentPersona.aggression;
         return score;
     }
 
@@ -266,8 +275,8 @@ public class SkeletonAI : MonoBehaviour
                 if (_decisionTimer > 5.0f) { _plannedAttack = null; SwitchState(AIState.Strategizing); }
                 break;
             case AIState.Retreating:
-                if (dist > currentPersona.preferredCombatRange + 2f) SwitchState(AIState.Strategizing);
-                if (_decisionTimer > 2.5f) SwitchState(AIState.Strategizing); 
+                float exitThreshold = currentPersona.preferredCombatRange + Mathf.Lerp(2.0f, 0.5f, currentPersona.aggression);
+                if (dist > exitThreshold) SwitchState(AIState.Strategizing);
                 _decisionTimer += Time.deltaTime;
                 break;
         }
@@ -330,11 +339,11 @@ public class SkeletonAI : MonoBehaviour
             float windup2 = 0.1f; float duration2 = 0.85f;
             float windup3 = 0.1f; float duration3 = 0.85f;
 
-            float timer = 0f;
-            while (timer < windup1) 
+            _attackTimer = 0f;
+            while (_attackTimer < windup1) 
             {
                 FaceTarget(); 
-                timer += Time.deltaTime;
+               _attackTimer += Time.deltaTime;
                 yield return null;
             }
             canDealDamage = true; yield return new WaitForSeconds(duration1); canDealDamage = false;
@@ -354,11 +363,11 @@ public class SkeletonAI : MonoBehaviour
             float currentDamageWindow = _currentExecutingAttack.damageDuration;
             float currentTotalDuration = _currentExecutingAttack.totalDuration;
 
-            float timer = 0f;
-            while (timer < currentWindUp) 
+            _attackTimer = 0f;
+            while (_attackTimer < currentWindUp) 
             {
                 if (_currentExecutingAttack.tracksPlayerDuringWindup) FaceTarget();
-                timer += Time.deltaTime;
+               _attackTimer += Time.deltaTime;
                 yield return null;
             }
 
@@ -379,12 +388,18 @@ public class SkeletonAI : MonoBehaviour
         else 
         {
             SwitchState(AIState.Strategizing);
-            // Soft-reset timer so an aggressive AI can chain attacks faster
+            // Soft-reset_attackTimer so an aggressive AI can chain attacks faster
             _decisionTimer = currentPersona.decisionFrequency * 0.5f; 
         }
 
         _plannedAttack = null; 
         _isActionLocked = false;
+    }
+
+        public float GetAttackProgress()
+    {
+        if (_currentExecutingAttack == null || _currentExecutingAttack.totalDuration == 0) return 0f;
+        return _attackTimer / _currentExecutingAttack.totalDuration;
     }
 
     // --- PARRY LOGIC ---
@@ -475,7 +490,10 @@ public class SkeletonAI : MonoBehaviour
     public float GetCurrentForward() => _animator.GetFloat(MoveZ);
     public bool IsAttacking() => _isActionLocked;
 
-    void SwitchState(AIState newState) { if (currentState != newState) { currentState = newState; _decisionTimer = 0; } }
+    void SwitchState(AIState newState) {
+         if (currentState != newState) {
+             currentState = newState;
+              _decisionTimer = 0; } }
     
     void HandleCirclingMovement() 
     {
@@ -490,15 +508,33 @@ public class SkeletonAI : MonoBehaviour
         }
 
         Vector3 finalMove = tangent * _strafeDirection * circleSpeed * Time.deltaTime;
+
+        float fearGap = currentPersona.fear * 3.0f; // Adds up to 3 meters of extra space
+        float targetDist = currentPersona.preferredCombatRange + fearGap;
+
+        // If aggressive, still drift closer as we did before
+        if (currentPersona.aggression > 0.7f) targetDist -= 0.5f;
+
         float dist = Vector3.Distance(transform.position, _target.position);
-        float error = dist - currentPersona.preferredCombatRange;
+        float error = dist - targetDist;
         Vector3 correction = toPlayer * error * 0.5f * Time.deltaTime; 
 
         _agent.Move(finalMove + correction);
         UpdateAnim(_strafeDirection, 0);
     }
 
-    void UpdateAnim(float x, float z) { _animator.SetFloat(MoveX, x, 0.1f, Time.deltaTime); _animator.SetFloat(MoveZ, z, 0.1f, Time.deltaTime); }
+    void UpdateAnim(float targetX, float targetZ) 
+    { 
+        // Get the current values from the animator
+        float currentX = _animator.GetFloat(MoveX);
+        float currentZ = _animator.GetFloat(MoveZ);
+
+        float smoothedX = Mathf.MoveTowards(currentX, targetX, Time.deltaTime * 5f);
+        float smoothedZ = Mathf.MoveTowards(currentZ, targetZ, Time.deltaTime * 5f);
+
+        _animator.SetFloat(MoveX, smoothedX); 
+        _animator.SetFloat(MoveZ, smoothedZ); 
+    }
     
     void FaceTarget() { 
         Vector3 d = (_target.position - transform.position).normalized; d.y=0; 

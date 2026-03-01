@@ -55,6 +55,9 @@ public class Telemetry : MonoBehaviour
     public int TotalDodges_Agent { get; private set; }
     public int TotalBlocks_Agent { get; private set; }
 
+    public float EnemyAttackID_Agent { get; private set; }
+    public float EnemyAttackProgress_Agent { get; private set; }
+
     // Enemy Attack Type Tracking
     private Dictionary<string, int> _enemyAttackAttempts = new Dictionary<string, int>();
     private Dictionary<string, int> _enemyAttackSuccesses = new Dictionary<string, int>();
@@ -201,10 +204,33 @@ public class Telemetry : MonoBehaviour
         CleanupKVPList(_staminaUsedHistory);
 
         // Tactical Context
-        if (enemyAI != null)
+                if (enemyAI != null)
         {
-            EnemyFSMState_Agent = (float)enemyAI.currentState / 5f; 
-            IsEnemyAttacking_Agent = (enemyAI.currentState == SkeletonAI.AIState.Attacking) ? 1f : 0f;
+            EnemyFSMState_Agent = (float)enemyAI.currentState / 5f;
+            
+            if (enemyAI.IsAttacking()) // Uses the getter we added to SkeletonAI
+            {
+                IsEnemyAttacking_Agent = 1f;
+                
+                // --- THE NEW CRITICAL DATA ---
+                var currentAtk = enemyAI.GetCurrentAttack();
+                if (currentAtk != null)
+                {
+                    // 1. Identify which attack is happening (Normalized 0-1)
+                    EnemyAttackID_Agent = (float)enemyAI.availableAttacks.IndexOf(currentAtk) / enemyAI.availableAttacks.Count;
+                    
+                    // 2. Calculate the progress (How far into the animation are we?)
+                    // This is (CurrentTimeInState / TotalDuration)
+                    // You'll need to expose a timer from SkeletonAI or use Animator.GetCurrentAnimatorStateInfo
+                    EnemyAttackProgress_Agent = enemyAI.GetAttackProgress(); 
+                }
+            }
+            else
+            {
+                IsEnemyAttacking_Agent = 0f;
+                EnemyAttackID_Agent = 0f;
+                EnemyAttackProgress_Agent = 0f;
+            }
         }
 
         // Skill Ratios
