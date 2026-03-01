@@ -92,52 +92,36 @@ public class PlayerProxyAgent : Agent
     }
 
     // --- 2. ACTIONS (The Brain driving the Body) ---
-public override void OnActionReceived(ActionBuffers actions)
+ public override void OnActionReceived(ActionBuffers actions)
     {
-        // 1. Force Rotation to Face Enemy (Auto-Aim)
-        // This solves the "Randomly attacking air" problem.
+        // 1. Force Rotation to Face Enemy
         if (enemyTransform != null)
         {
             Vector3 directionToEnemy = (enemyTransform.position - transform.position).normalized;
-            directionToEnemy.y = 0; // Keep flat
+            directionToEnemy.y = 0; 
             if (directionToEnemy != Vector3.zero)
             {
-                // Smoothly rotate towards enemy
                 transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(directionToEnemy), Time.deltaTime * 10f);
             }
         }
 
-        // 2. Interpret Movement as "Strafe / Advance"
-        // MoveY = Forward/Back relative to Enemy
-        // MoveX = Strafe Left/Right relative to Enemy
+        // 2. Movement
         float inputForward = actions.ContinuousActions[1];
         float inputStrafe = actions.ContinuousActions[0];
 
-        // We assume the character is now facing the enemy (from step 1).
-        // So "Forward" input naturally moves towards the enemy.
-        // We pass these inputs directly to Walk script.
         if (walkScript != null) 
-        {
             walkScript.SetInput(new Vector2(inputStrafe, inputForward));
-        }
 
-        // Discrete: Buttons
-        // 0=None, 1=Atk, 2=Block, 3=Dodge
+        // 3. Discrete Actions: Buttons
+        // 0=None, 1=Atk, 2=Block, 3=Dodge, 4=Parry
         int button = actions.DiscreteActions[0];
 
-        // Default state (stop blocking unless button is held)
+        // Reset persistent states
         if (blockScript != null) blockScript.SetBlocking(false); 
 
         switch (button)
         {
             case 1: // ATTACK
-                if (enemyTransform != null)
-                {
-                    // Instant snap for attack precision
-                    Vector3 attackDir = (enemyTransform.position - transform.position).normalized;
-                    attackDir.y = 0;
-                    if (attackDir != Vector3.zero) transform.rotation = Quaternion.LookRotation(attackDir);
-                }
                 if (attackScript) attackScript.AttemptAttack(); 
                 break;
 
@@ -148,6 +132,11 @@ public override void OnActionReceived(ActionBuffers actions)
             case 3: // DODGE
                 if (dodgeScript) dodgeScript.AttemptDodge(); 
                 break;
+            
+            case 4: // PARRY
+                // Ensure PlayerParry has public 'AttemptParry()' method
+                if (parryScript) parryScript.AttemptParry(); 
+                break;
         }
     }
 
@@ -156,12 +145,8 @@ public override void OnActionReceived(ActionBuffers actions)
         var continuous = actionsOut.ContinuousActions;
         var discrete = actionsOut.DiscreteActions;
 
-        // Reset
-        continuous[0] = 0;
-        continuous[1] = 0;
-        discrete[0] = 0;
+        continuous[0] = 0; continuous[1] = 0; discrete[0] = 0;
 
-        // 1. Read Keyboard for WASD
         if (Keyboard.current != null)
         {
             if (Keyboard.current.wKey.isPressed) continuous[1] = 1f;
@@ -170,22 +155,29 @@ public override void OnActionReceived(ActionBuffers actions)
             if (Keyboard.current.dKey.isPressed) continuous[0] = 1f;
             else if (Keyboard.current.aKey.isPressed) continuous[0] = -1f;
             
-            // Buttons
             if (Keyboard.current.spaceKey.wasPressedThisFrame) discrete[0] = 3; // Dodge
+            
+            // Example: 'E' or 'F' for Parry if not using Mouse
+            if (Keyboard.current.fKey.wasPressedThisFrame) discrete[0] = 4; 
         }
 
-        // 2. Read Mouse for Attacks/Block
         if (Mouse.current != null)
         {
             if (Mouse.current.leftButton.isPressed) discrete[0] = 1; // Attack
-            else if (Mouse.current.rightButton.isPressed) discrete[0] = 2; // Block
+            
+            // Logic for Block vs Parry on Right Click
+            // Simple approach: Right Click = Block. Use a Key for Parry to be distinct for ML.
+            // Or: If Pressed This Frame = Parry (4), else if Pressed = Block (2).
+            
+            if (Mouse.current.rightButton.wasPressedThisFrame) 
+                discrete[0] = 4; // Parry (Action 4)
+            else if (Mouse.current.rightButton.isPressed) 
+                discrete[0] = 2; // Block (Action 2)
         }
 
-        // --- DEBUGGING ---
-        // Only log if we are actually pressing something
         if (continuous[0] != 0 || continuous[1] != 0 || discrete[0] != 0)
         {
-            Debug.Log($"<color=cyan>HEURISTIC:</color> Move=[{continuous[0]}, {continuous[1]}] | Action={discrete[0]}");
+            // Debug.Log($"HEURISTIC: Move=[{continuous[0]}, {continuous[1]}] | Action={discrete[0]}");
         }
     }
     

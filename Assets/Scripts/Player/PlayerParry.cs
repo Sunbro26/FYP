@@ -52,6 +52,22 @@ public class PlayerParry : MonoBehaviour
             }
     }
 
+        // Public method for ML-Agents to trigger a parry
+    public void AttemptParry()
+    {
+        // Check conditions: Not already parrying, not blocking, not attacking
+        if (!IsParryAnimationRunning && !_blockScript.IsBlocking && !_attackScript.IsAttacking())
+        {
+            // Check Stamina
+            if (_stats.UseStamina(staminaCost))
+            {
+                // Fire Event & Start Sequence
+                OnParryAttempt?.Invoke();
+                StartCoroutine(ParrySequence());
+            }
+        }
+    }
+    
     private IEnumerator ParrySequence()
     {
         IsParryAnimationRunning = true;
