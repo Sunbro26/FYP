@@ -99,6 +99,7 @@ public class PlayerControl : MonoBehaviour
                     else
                     {
                         Debug.Log("GUARD BROKEN! Stamina Depleted.");
+                        if (_stats != null) _stats.UseStamina(_stats.currentStamina);
                         StartCoroutine(GuardBreakSequence(enemyScript));
                         return; 
                     }
