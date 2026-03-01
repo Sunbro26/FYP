@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 using System.Collections;
+using System;
 
 public class PlayerParry : MonoBehaviour
 {
@@ -27,6 +28,8 @@ public class PlayerParry : MonoBehaviour
     private PlayerAttack _attackScript;
     private Walk _walkScript; // Or SimpleFreeLookMovement
 
+    public static event Action OnParryAttempt;
+
     private static readonly int ParryTrigger = Animator.StringToHash("Parry");
 
     void Start()
@@ -42,12 +45,11 @@ public class PlayerParry : MonoBehaviour
     {
         // Can only parry if input started, not already parrying/attacking, and not holding block
         if (context.started && !IsParryAnimationRunning && !_blockScript.IsBlocking && !_attackScript.IsAttacking())
-        {
             if (_stats.UseStamina(staminaCost))
             {
+                OnParryAttempt?.Invoke();
                 StartCoroutine(ParrySequence());
             }
-        }
     }
 
     private IEnumerator ParrySequence()

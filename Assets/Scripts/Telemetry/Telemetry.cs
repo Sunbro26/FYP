@@ -3,171 +3,315 @@ using System.Collections.Generic;
 using System.Linq;
 using System;
 
+/// <summary>
+/// Expanded Telemetry system.
+/// Tracks Performance, Resource Management, and Success Rates.
+/// </summary>
 public class Telemetry : MonoBehaviour
 {
-    [Header("Telemetry Settings")]
-    [Tooltip("List of event names (as strings) that should count towards Actions Per Minute (APM).")]
-    [SerializeField] private List<string> apmEventNames = new List<string>();
+    // --- SECTION 1: Configuration ---
 
-    [Tooltip("How often (in seconds) to log the current APM and positional data.")]
-    [SerializeField] private float logInterval = 10f;
+    [Header("Console Logging")]
+    [SerializeField] private float logInterval = 5f;
 
-    [Header("Positional Tracking")]
+    [Header("Object References")]
     [Tooltip("The Transform of the player character.")]
     [SerializeField] private Transform playerTransform;
-    [Tooltip("The Transform of the enemy agent to track relative distance. Can be null if only tracking player position.")]
+    [Tooltip("The Transform of the enemy agent.")]
     [SerializeField] private Transform enemyTransform;
+    
+    private SkeletonAI enemyAI;
+    private CharacterStats PlayerStats; 
+    private CharacterStats EnemyStats; 
 
-    // Dictionary to store timestamps for each tracked APM event
-    private Dictionary<string, List<float>> _apmEventTimestamps = new Dictionary<string, List<float>>();
-    private float _timer;
+    // --- SECTION 2: Public Properties for ML-Agent ---
 
-    // Positional tracking variables
-    private Vector3 _lastPlayerPosition;
-    private Vector3 _lastEnemyPosition; // To calculate enemy movement as well, though not explicitly asked for here
-    private float _lastDistanceToEnemy; // To track change in distance to enemy
+    [Header("Spatial Metrics")]
+    public float PlayerEnemyDistance_Agent { get; private set; }
+    public float PlayerEnemyDistanceChange_Agent { get; private set; } 
+
+    [Header("Resource Metrics")]
+    public float PlayerHealthPercentage_Agent { get; private set; }
+    public float PlayerStaminaPercentage_Agent { get; private set; }
+    public float StaminaUsageRate_Agent { get; private set; } 
+
+    [Header("Combat Efficiency Metrics")]
+    public float RecentDamageDealt_Agent { get; private set; }
+    public float RecentDamageReceived_Agent { get; private set; }
+    
+    // --- New Tactical Properties ---
+    [Header("Tactical Enemy Metrics")]
+    public float EnemyFSMState_Agent { get; private set; }
+    public float IsEnemyAttacking_Agent { get; private set; }
+
+    [Header("Success Rates (0.0 to 1.0)")]
+    public float AttackSuccessRate_Agent { get; private set; }
+    public float ParrySuccessRate_Agent { get; private set; }
+    public float DodgeSuccessRate_Agent { get; private set; }
+    public float BlockSuccessRate_Agent { get; private set; } // NEW
+
+    [Header("Action Counts (Absolute)")]
+    public int TotalAttacks_Agent { get; private set; }
+    public int TotalParries_Agent { get; private set; }
+    public int TotalDodges_Agent { get; private set; }
+    public int TotalBlocks_Agent { get; private set; } // NEW
+
+    // Enemy Attack Tracking
+    private Dictionary<string, int> _enemyAttackAttempts = new Dictionary<string, int>();
+    private Dictionary<string, int> _enemyAttackSuccesses = new Dictionary<string, int>();
+
+    // --- SECTION 3: Internal State Management ---
+
+    private float _historyWindow = 10f; 
+
+    // Event Lists
+    private List<float> _attackAttempts = new List<float>();
+    private List<float> _attackSuccesses = new List<float>();
+    private List<float> _parryAttempts = new List<float>();
+    private List<float> _parrySuccesses = new List<float>();
+    private List<float> _dodgeAttempts = new List<float>();
+    private List<float> _dodgeSuccesses = new List<float>();
+    private List<float> _blockSuccesses = new List<float>(); // NEW (Successful blocks only)
+    
+    // Accumulators
+    private List<KeyValuePair<float, float>> _damageDealtHistory = new List<KeyValuePair<float, float>>();
+    private List<KeyValuePair<float, float>> _damageReceivedHistory = new List<KeyValuePair<float, float>>();
+    private List<KeyValuePair<float, float>> _staminaUsedHistory = new List<KeyValuePair<float, float>>();
+
+    private Vector3 _lastPlayerPosition_ForAgent;
+    private float _lastDistanceToEnemy_ForAgent;
+    private float _lastStamina;
+    private float _logTimer;
+
+    // --- SECTION 4: Unity Lifecycle & Events ---
 
     void OnEnable()
     {
-        // Subscribe to PlayerAttack event
-        PlayerAttack.OnPlayerAttack += OnPlayerAttackHandler;
-        // PlayerDodge.OnPlayerDodge += OnPlayerDodgeHandler; // Uncomment if PlayerDodge event exists
+        enemyAI = enemyTransform != null ? enemyTransform.GetComponent<SkeletonAI>() : null;
+        PlayerStats = playerTransform != null ? playerTransform.GetComponent<CharacterStats>() : null;
+        EnemyStats = enemyTransform != null ? enemyTransform.GetComponent<CharacterStats>() : null;
+        
+        // Attacks (Assuming PlayerAttack has these events)
+        // PlayerAttack.OnPlayerAttack += HandleAttackAttempt;
+        // PlayerAttack.OnPlayerHitEnemy += HandleAttackSuccess;
+
+        PlayerParry.OnParryAttempt += HandleParryAttempt;
+        SkeletonAI.OnParrySuccess += HandleParrySuccess;
+
+        PlayerDodge.OnDodgeAttempt += HandleDodgeAttempt;
+        PlayerDodge.OnDodgeSuccess += HandleDodgeSuccess;
+
+        PlayerControl.OnBlockSuccess += HandleBlockSuccess; // NEW
+
+        if (PlayerStats) PlayerStats.OnTakeDamage += HandleDamageReceived;
+        if (EnemyStats) EnemyStats.OnTakeDamage += HandleDamageDealt;
+
+        if (enemyAI)
+        {
+            enemyAI.OnEnemyAttackAttempt += HandleEnemyAttackAttempt;
+            enemyAI.OnEnemyAttackSuccess += HandleEnemyAttackSuccess;
+        }
     }
 
     void OnDisable()
     {
-        // Unsubscribe from events
-        PlayerAttack.OnPlayerAttack -= OnPlayerAttackHandler;
-        // PlayerDodge.OnPlayerDodge -= OnPlayerDodgeHandler; // Uncomment if PlayerDodge event exists
+        // Unsubscribe to prevent memory leaks!
+        PlayerParry.OnParryAttempt -= HandleParryAttempt;
+        SkeletonAI.OnParrySuccess -= HandleParrySuccess;
+        PlayerDodge.OnDodgeAttempt -= HandleDodgeAttempt;
+        PlayerDodge.OnDodgeSuccess -= HandleDodgeSuccess;
+        PlayerControl.OnBlockSuccess -= HandleBlockSuccess;
+        
+        if (PlayerStats) PlayerStats.OnTakeDamage -= HandleDamageReceived;
+        if (EnemyStats) EnemyStats.OnTakeDamage -= HandleDamageDealt;
+        if (enemyAI)
+        {
+            enemyAI.OnEnemyAttackAttempt -= HandleEnemyAttackAttempt;
+            enemyAI.OnEnemyAttackSuccess -= HandleEnemyAttackSuccess;
+        }
     }
 
     void Start()
     {
-        if (playerTransform == null)
+        if (playerTransform == null || enemyTransform == null)
         {
-            Debug.LogError("Telemetry: Player Transform not assigned. Positional tracking for player will be disabled.", this);
+            Debug.LogError("Telemetry: Missing Transforms!", this);
+            return;
         }
-        else
-        {
-            _lastPlayerPosition = playerTransform.position;
-        }
-
-        if (enemyTransform == null)
-        {
-            Debug.LogWarning("Telemetry: Enemy Transform not assigned. Positional tracking relative to enemy will be disabled.", this);
-        }
-        else
-        {
-            _lastEnemyPosition = enemyTransform.position;
-            _lastDistanceToEnemy = Vector3.Distance(playerTransform.position, enemyTransform.position);
-        }
-
-        if (apmEventNames == null || apmEventNames.Count == 0)
-        {
-            Debug.LogWarning("Telemetry: No APM event names specified. APM tracking will be limited.", this);
-        }
-
-        // Initialize the dictionary for each event listed in apmEventNames
-        foreach (string eventName in apmEventNames)
-        {
-            if (!_apmEventTimestamps.ContainsKey(eventName))
-            {
-                _apmEventTimestamps.Add(eventName, new List<float>());
-            }
-        }
-
-        _timer = logInterval; // Start logging immediately on first interval
+        
+        _lastPlayerPosition_ForAgent = playerTransform.position;
+        _lastDistanceToEnemy_ForAgent = Vector3.Distance(playerTransform.position, enemyTransform.position);
+        
+        if (PlayerStats) _lastStamina = PlayerStats.currentStamina;
+        _logTimer = logInterval;
     }
 
     void Update()
     {
-        _timer -= Time.deltaTime;
-        if (_timer <= 0f)
+        UpdateSpatialMetrics();
+        UpdateResourceMetrics();
+        UpdateCombatRates();
+
+        _logTimer -= Time.deltaTime;
+        if (_logTimer <= 0f)
         {
-            LogActionsPerMinute();
-            LogPositionalChanges(); // NEW: Log positional changes
-            _timer = logInterval;
+            LogSummaryReport();
+            _logTimer = logInterval;
         }
     }
 
-    private void AddApmEventTimestamp(string eventName)
+    // --- SECTION 5: Core Logic ---
+
+    private void UpdateSpatialMetrics()
     {
-        if (_apmEventTimestamps.ContainsKey(eventName))
-        {
-            _apmEventTimestamps[eventName].Add(Time.time);
-        }
-        else
-        {
-            Debug.LogWarning($"Telemetry: Event '{eventName}' fired but not initially configured for APM. Adding it to tracking.", this);
-            _apmEventTimestamps.Add(eventName, new List<float> { Time.time });
-        }
+        Vector3 currentPos = playerTransform.position;
+        float currentDist = Vector3.Distance(currentPos, enemyTransform.position);
+
+        PlayerEnemyDistance_Agent = currentDist;
+        PlayerEnemyDistanceChange_Agent = currentDist - _lastDistanceToEnemy_ForAgent;
+
+        _lastPlayerPosition_ForAgent = currentPos;
+        _lastDistanceToEnemy_ForAgent = currentDist;
     }
 
-    private void OnPlayerAttackHandler()
+    private void UpdateResourceMetrics()
     {
-        AddApmEventTimestamp("PlayerAttack");
-        // Debug.Log("Telemetry: PlayerAttack recorded.");
+        if (PlayerStats == null) return;
+
+        PlayerHealthPercentage_Agent = (float)PlayerStats.currentHealth / PlayerStats.maxHealth;
+        PlayerStaminaPercentage_Agent = PlayerStats.currentStamina / PlayerStats.maxStamina;
+
+        if (PlayerStats.currentStamina < _lastStamina)
+        {
+            float used = _lastStamina - PlayerStats.currentStamina;
+            _staminaUsedHistory.Add(new KeyValuePair<float, float>(Time.time, used));
+        }
+        _lastStamina = PlayerStats.currentStamina;
+
+        StaminaUsageRate_Agent = CalculateAccumulatedValue(_staminaUsedHistory);
     }
 
-    // private void OnPlayerDodgeHandler()
-    // {
-    //     AddApmEventTimestamp("PlayerDodge");
-    //     // Debug.Log("Telemetry: PlayerDodge recorded.");
-    // }
-
-    private void LogActionsPerMinute()
+    private void UpdateCombatRates()
     {
-        float currentTime = Time.time;
-        float oneMinuteAgo = currentTime - 60f;
-        int totalAPMActions = 0;
+        // Cleanup old data
+        CleanupList(_attackAttempts);
+        CleanupList(_attackSuccesses);
+        CleanupList(_parryAttempts);
+        CleanupList(_parrySuccesses);
+        CleanupList(_dodgeAttempts);
+        CleanupList(_dodgeSuccesses);
+        CleanupList(_blockSuccesses); // NEW
+        CleanupKVPList(_damageDealtHistory);
+        CleanupKVPList(_damageReceivedHistory);
+        CleanupKVPList(_staminaUsedHistory);
 
-        Debug.Log($"--- Telemetry Report ({currentTime:F2}s) ---");
-
-        if (_apmEventTimestamps.Count == 0)
+        // --- UPDATE: Sync Tactical Enemy Context ---
+        if (enemyAI != null)
         {
-            Debug.Log("No APM events configured or tracked yet.");
+            // Normalize state (0 to 1 range) based on 6 possible enum values
+            EnemyFSMState_Agent = (float)enemyAI.currentState / 5f; 
+            // Proactive Threat detection
+            IsEnemyAttacking_Agent = (enemyAI.currentState == SkeletonAI.AIState.Attacking) ? 1f : 0f;
         }
-        else
-        {
-            foreach (var entry in _apmEventTimestamps)
-            {
-                string eventName = entry.Key;
-                List<float> timestamps = entry.Value;
 
-                timestamps.RemoveAll(t => t < oneMinuteAgo);
-                int apmCount = timestamps.Count;
-                totalAPMActions += apmCount;
+        // Update Counts
+        TotalAttacks_Agent = _attackAttempts.Count;
+        TotalParries_Agent = _parryAttempts.Count;
+        TotalDodges_Agent = _dodgeAttempts.Count;
+        TotalBlocks_Agent = _blockSuccesses.Count; // Total SUCCESSFUL blocks
 
-                Debug.Log($"- {eventName} APM: {apmCount}");
-            }
-            Debug.Log($"Total Actions Per Minute (APM): {totalAPMActions}");
-        }
+        // Update Success Ratios
+        AttackSuccessRate_Agent = TotalAttacks_Agent > 0 ? (float)_attackSuccesses.Count / TotalAttacks_Agent : 0f;
+        ParrySuccessRate_Agent = TotalParries_Agent > 0 ? (float)_parrySuccesses.Count / TotalParries_Agent : 0f;
+        DodgeSuccessRate_Agent = TotalDodges_Agent > 0 ? (float)_dodgeSuccesses.Count / TotalDodges_Agent : 0f;
+        
+        // For Block Rate, since we don't count "Block Attempts" (holding button), 
+        // we can measure it as "Blocks / (Blocks + DamageTaken Events)".
+        // This estimates: "Of all the times I got hit, how many did I block?"
+        int totalDefenseEvents = TotalBlocks_Agent + _damageReceivedHistory.Count;
+        BlockSuccessRate_Agent = totalDefenseEvents > 0 ? (float)TotalBlocks_Agent / totalDefenseEvents : 0f;
+
+        // Update Damage Totals
+        RecentDamageDealt_Agent = CalculateAccumulatedValue(_damageDealtHistory);
+        RecentDamageReceived_Agent = CalculateAccumulatedValue(_damageReceivedHistory);
     }
 
-    // NEW FUNCTION: Log player and relative positional changes
-    private void LogPositionalChanges()
+    // --- Helpers ---
+
+    private void CleanupList(List<float> timestamps)
     {
-        // Player Position Change
-        if (playerTransform != null)
+        float threshold = Time.time - _historyWindow;
+        timestamps.RemoveAll(t => t < threshold);
+    }
+
+    private void CleanupKVPList(List<KeyValuePair<float, float>> history)
+    {
+        float threshold = Time.time - _historyWindow;
+        history.RemoveAll(kvp => kvp.Key < threshold);
+    }
+
+    private float CalculateAccumulatedValue(List<KeyValuePair<float, float>> history)
+    {
+        float total = 0;
+        foreach (var entry in history) total += entry.Value;
+        return total;
+    }
+
+    // --- SECTION 6: Event Handlers ---
+
+    public void HandleAttackAttempt() { _attackAttempts.Add(Time.time); }
+    public void HandleAttackSuccess() { _attackSuccesses.Add(Time.time); }
+
+    public void HandleParryAttempt() { _parryAttempts.Add(Time.time); }
+    public void HandleParrySuccess() { _parrySuccesses.Add(Time.time); }
+
+    public void HandleDodgeAttempt() { _dodgeAttempts.Add(Time.time); }
+    public void HandleDodgeSuccess() { _dodgeSuccesses.Add(Time.time); }
+
+    // NEW: Handle Block
+    public void HandleBlockSuccess() { _blockSuccesses.Add(Time.time); }
+
+    public void HandleDamageDealt(int amount) 
+    { 
+        _damageDealtHistory.Add(new KeyValuePair<float, float>(Time.time, amount)); 
+    }
+    public void HandleDamageReceived(int amount) 
+    { 
+        _damageReceivedHistory.Add(new KeyValuePair<float, float>(Time.time, amount)); 
+    }
+
+    private void HandleEnemyAttackAttempt(string attackName)
+    {
+        if (!_enemyAttackAttempts.ContainsKey(attackName)) _enemyAttackAttempts[attackName] = 0;
+        _enemyAttackAttempts[attackName]++;
+    }
+
+    private void HandleEnemyAttackSuccess(string attackName)
+    {
+        if (!_enemyAttackSuccesses.ContainsKey(attackName)) _enemyAttackSuccesses[attackName] = 0;
+        _enemyAttackSuccesses[attackName]++;
+    }
+
+    public float GetEnemyAttackSuccessRate(string attackName)
+    {
+        if (_enemyAttackAttempts.TryGetValue(attackName, out int attempts) && attempts > 0)
         {
-            float playerDistanceMoved = Vector3.Distance(_lastPlayerPosition, playerTransform.position);
-            Debug.Log($"Player moved {playerDistanceMoved:F2} units in the last {logInterval:F2}s.");
-            _lastPlayerPosition = playerTransform.position;
+            int successes = _enemyAttackSuccesses.ContainsKey(attackName) ? _enemyAttackSuccesses[attackName] : 0;
+            return (float)successes / attempts;
         }
+        return 0f;
+    }
 
-        // Player-to-Enemy Relative Position Change
-        if (playerTransform != null && enemyTransform != null)
-        {
-            float currentDistance = Vector3.Distance(playerTransform.position, enemyTransform.position);
-            float distanceChange = currentDistance - _lastDistanceToEnemy;
+    // --- SECTION 7: Debugging ---
 
-            // Determine if player got closer or further
-            string direction = distanceChange < 0 ? "closer to" : "further from";
-            if (Mathf.Approximately(distanceChange, 0)) direction = "same distance from";
-
-            Debug.Log($"Player is {Mathf.Abs(distanceChange):F2} units {direction} enemy.");
-            _lastDistanceToEnemy = currentDistance;
-        }
-        Debug.Log("------------------------------------");
+    private void LogSummaryReport()
+    {
+        Debug.Log($"--- Telemetry Update ---");
+        Debug.Log($"Health: {PlayerHealthPercentage_Agent:P0} | Stamina: {PlayerStaminaPercentage_Agent:P0}");
+        Debug.Log($"Block Rate: {BlockSuccessRate_Agent:P0} ({TotalBlocks_Agent} Blocks)");
+        Debug.Log($"Parry Rate: {ParrySuccessRate_Agent:P0}");
+        Debug.Log($"Dodge Rate: {DodgeSuccessRate_Agent:P0}");
+        Debug.Log($"Recent Damage: Dealt {RecentDamageDealt_Agent} / Taken {RecentDamageReceived_Agent}");
+        Debug.Log($"------------------------");
     }
 }

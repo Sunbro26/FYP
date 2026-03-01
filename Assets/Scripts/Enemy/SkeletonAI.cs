@@ -4,26 +4,18 @@ using UnityEngine;
 using UnityEngine.AI;
 
 [RequireComponent(typeof(NavMeshAgent), typeof(Animator))]
-public class SkeletonAI : MonoBehaviour
+public class SkeletonAI : MonoBehaviour 
 {
     // --- Definitions ---
-    public enum AIState
-    {
-        Idle,           // Waiting for player
-        Strategizing,   // Circling while deciding on a plan
-        Maneuvering,    // Moving to the specific range required by the plan
-        Attacking,      // Locked in animation
-        Retreating,     // Defensive retreat (Bait/Reset)
-        Stunned         // Parried
-    }
+    public enum AIState { Idle, Strategizing, Maneuvering, Attacking, Retreating, Stunned }
 
-    [System.Serializable]
+    [System.Serializable]   
     public class AIPersona
     {
-        [Range(0, 1)] public float aggression = 0.7f; 
-        [Range(0, 1)] public float fear = 0.2f;       
-        public float decisionFrequency = 2.0f; 
-        public float preferredCombatRange = 2.5f; 
+        [Range(0, 1)] public float aggression = 0.7f;
+        [Range(0, 1)] public float fear = 0.2f;
+        public float decisionFrequency = 2.0f;
+        public float preferredCombatRange = 2.5f;
     }
 
     [System.Serializable]
@@ -33,20 +25,21 @@ public class SkeletonAI : MonoBehaviour
         public int animationIndex;      
         public float optimalRange;      
         public float rangeTolerance = 0.5f; 
-        public float weight = 1.0f;     
+        public float weight = 1.0f;
+        public bool isParriable = true;
         
         [Header("Timing")]
         public float windUpTime;      
         public float damageDuration;  
-        public float totalDuration;   
+        public float totalDuration;
+        
+        [Header("Logic")]
+        public float cooldown = 4.0f; // NEW: How long before using this again?
+        [HideInInspector] public float lastTimeUsed = -999f; // Track usage
 
         [Header("Quirks")]
-        [Tooltip("Uncheck this for 360 spins so the skeleton doesn't snap to player while spinning.")]
         public bool tracksPlayerDuringWindup = true;
-
-        [Tooltip("Check this for Kicks to visualize the hitbox on the Foot instead of Sword.")]
         public bool useFootHitbox = false;
-        // --- NEW: DAMAGE STATS ---
         [Header("Damage Stats")]
         [Tooltip("How much HP this attack takes if it hits.")]
         public int damage = 15;
@@ -59,31 +52,32 @@ public class SkeletonAI : MonoBehaviour
     public float sensorRadius = 15f;
     public float circleSpeed = 2.5f;
 
+    // --- PROXY AGENT MODIFICATION ---
+    [Header("AI Control")]
+    [Tooltip("If true, the internal heuristic logic is disabled, allowing a Proxy Agent to drive this character.")]
+    public bool useExternalAI = false; 
+
     [Header("Attack Library")]
     public List<EnemyAttack> availableAttacks; 
 
     // --- Visual Debugging ---
     [Header("Visual Debugging")]
-    [Tooltip("Drag the MeshRenderer of the Sword here to see it flash Red.")]
     public Renderer swordMesh; 
-    
-    [Tooltip("Drag the Sword Bone (Hand) here.")]
     public Transform swordBone;
-    
-    [Tooltip("Drag the Foot Bone here (For Kicks).")]
     public Transform footBone; 
-
-    [Tooltip("Check this to see the hitbox wireframe.")]
     public bool showDebugGizmos = true;
     public float hitRadius = 0.5f;
 
-    // --- Private Debug Variables ---
-    private Color _originalSwordColor; 
-    private Material _swordMaterialInstance; // Cache the material
-    private string _colorPropertyName; // To store the correct shader property name
+    // --- Events for Telemetry ---
+    public event System.Action<string> OnEnemyAttackAttempt; 
+    public event System.Action<string> OnEnemyAttackSuccess;
+    public static event System.Action OnParrySuccess; 
 
-    // --- State Variables ---
-    private AIState _currentState;
+    // --- Internals ---
+    private Color _originalSwordColor; 
+    private Material _swordMaterialInstance; 
+    private string _colorPropertyName; 
+    public AIState currentState;
     private NavMeshAgent _agent;
     private Animator _animator;
     private Transform _target;
@@ -92,10 +86,8 @@ public class SkeletonAI : MonoBehaviour
     private float _decisionTimer;
     private bool _isActionLocked = false;
     private int _retreatType = 0; 
-
     private float _strafeDirection = 1f;
     private float _strafeTimer = 0f;
-
     public bool canDealDamage = false;
 
     // --- Hashes ---
@@ -104,7 +96,6 @@ public class SkeletonAI : MonoBehaviour
     private static readonly int AttackIndex = Animator.StringToHash("AttackIndex");
     private static readonly int TriggerAttack = Animator.StringToHash("TriggerAttack");
     private static readonly int AttackSpeedHash = Animator.StringToHash("AttackSpeed");
-    private static readonly int HitTrigger = Animator.StringToHash("Hit");
 
     void Start()
     {
@@ -115,316 +106,306 @@ public class SkeletonAI : MonoBehaviour
 
         if (availableAttacks.Count == 0) Debug.LogError("Add Attacks to the List in Inspector!");
         
-        // --- NEW: SAFE SHADER SETUP ---
+        // Shader Setup
         if (swordMesh != null) 
         {
-            // Creates a temporary instance of the material so we don't change the asset file
             _swordMaterialInstance = swordMesh.material;
-            
-            // Try to find the correct color property name
             if (_swordMaterialInstance.HasProperty("_Color")) _colorPropertyName = "_Color";
             else if (_swordMaterialInstance.HasProperty("_BaseColor")) _colorPropertyName = "_BaseColor";
             else if (_swordMaterialInstance.HasProperty("_MainColor")) _colorPropertyName = "_MainColor";
-            
-            // If we found a valid property, save the original color
             if (!string.IsNullOrEmpty(_colorPropertyName))
-            {
                 _originalSwordColor = _swordMaterialInstance.GetColor(_colorPropertyName);
-            }
-            else
-            {
-                Debug.LogWarning("Could not find a Color property on the sword shader. Red flash will be disabled.");
-            }
         }
-
         SwitchState(AIState.Idle);
     }
 
     void Update()
     {
         UpdateDebugVisuals(); 
-
         if (_target == null) return;
-        if (_isActionLocked) return; 
+        // --- PROXY AGENT MODIFICATION: Logic Guard ---
+        // If an external agent is controlling us, we skip the internal decision-making and movement logic.
+        if (useExternalAI) return; 
+        if (_isActionLocked) return;
 
         float distance = Vector3.Distance(transform.position, _target.position);
-        DecideStrategy(distance);
-        ExecuteStateMovement(distance);
 
-        if (_currentState != AIState.Stunned) FaceTarget();
+        if (currentState == AIState.Strategizing)
+        {
+            _decisionTimer += Time.deltaTime;
+            RunHeuristicDecisionLogic();
+        }
+        else
+        {
+            ManageActiveState(distance);
+        }
+
+        ExecuteStateMovement(distance);
+        if (currentState != AIState.Stunned) FaceTarget();
     }
 
-    // --- THE BRAIN ---
-    void DecideStrategy(float dist)
+    // --- HEURISTIC DECISION LOGIC ---
+    void RunHeuristicDecisionLogic()
     {
-        switch (_currentState)
+        if (_decisionTimer > currentPersona.decisionFrequency)
+        {
+            float dist = 0f;
+            if (_target) dist = Vector3.Distance(transform.position, _target.position);
+            
+            // 1. Panic Check (FIXED)
+            // Instead of forcing Attack[0], find a valid fast attack
+            if (dist < 1.5f && Random.value < currentPersona.aggression)
+            {
+                EnemyAttack panicAttack = GetRandomFastAttack();
+                if (panicAttack != null)
+                {
+                    StartAttack(panicAttack);
+                    return;
+                }
+            }
+
+            // 2. Smart Choice
+            EnemyAttack bestMove = ChooseSmartAttack();
+            
+            if (bestMove != null)
+            {
+                _plannedAttack = bestMove;
+                SwitchState(AIState.Maneuvering);
+            }
+            else
+            {
+                SwitchState(AIState.Retreating);
+            }
+        }
+    }
+
+    // --- UTILITY LOGIC ---
+// --- UTILITY LOGIC (Updated for Variety) ---
+    EnemyAttack ChooseSmartAttack()
+    {
+        float currentDist = Vector3.Distance(transform.position, _target.position);
+        
+        // Use a list to store all "Decent" options
+        List<EnemyAttack> validAttacks = new List<EnemyAttack>();
+        List<float> scores = new List<float>();
+        float totalScore = 0;
+
+        foreach (var attack in availableAttacks)
+        {
+            // Filter: Cooldown
+            if (Time.time < attack.lastTimeUsed + attack.cooldown) continue;
+
+            float score = CalculateAttackScore(attack, currentDist);
+            
+            // Only consider attacks that make sense (Score > 0)
+            if (score > 0)
+            {
+                // Cube the score to emphasize good moves, but keep bad ones possible
+                // e.g. Score 10 -> 1000. Score 5 -> 125. 
+                // The 10 is much more likely, but 5 is still possible.
+                float finalScore = Mathf.Pow(score, 2); 
+                
+                validAttacks.Add(attack);
+                scores.Add(finalScore);
+                totalScore += finalScore;
+            }
+        }
+
+        // Weighted Random Selection (The Lottery)
+        if (validAttacks.Count > 0)
+        {
+            float randomValue = Random.Range(0, totalScore);
+            float cursor = 0;
+            for (int i = 0; i < validAttacks.Count; i++)
+            {
+                cursor += scores[i];
+                if (cursor >= randomValue) return validAttacks[i];
+            }
+            return validAttacks[validAttacks.Count - 1]; // Fallback to last
+        }
+
+        return null;
+    }
+
+    float CalculateAttackScore(EnemyAttack attack, float dist)
+    {
+        float score = 10f; // Base score so we don't hit 0 easily
+
+        // 1. Range Logic (Widened tolerance)
+        float distDiff = Mathf.Abs(dist - attack.optimalRange);
+        
+        // If within range + 1 meter, it's a good candidate
+        if (distDiff <= attack.rangeTolerance + 1.0f) 
+        {
+            score += 40f; 
+            // Bonus points for being in PERFECT range
+            if (distDiff <= attack.rangeTolerance) score += 20f;
+        }
+        else 
+        {
+            // Penalty for distance, but not as harsh
+            score -= distDiff * 3f; 
+        }
+
+        // 2. Add Weight (Inspector Bias)
+        score += attack.weight * 5f; // Multiplied to make Inspector slider impactful
+
+        return score;
+    }
+
+    EnemyAttack GetRandomFastAttack()
+    {
+        // INCREASED THRESHOLD: Now includes attacks up to 1.0s windup
+        // This allows Basic Slash / Horizontal to be used in "Panic"
+        List<EnemyAttack> fastAttacks = availableAttacks.FindAll(a => a.windUpTime < 1.0f);
+        
+        if (fastAttacks.Count > 0)
+        {
+            // Pick random from valid fast attacks
+            return fastAttacks[Random.Range(0, fastAttacks.Count)];
+        }
+        
+        // Fallback: Just return the first available attack (ignoring windup)
+        return availableAttacks.Count > 0 ? availableAttacks[0] : null;
+    }
+    // --- CORE LOGIC & MOVEMENT ---
+    void ManageActiveState(float dist)
+    {
+        switch (currentState)
         {
             case AIState.Idle:
                 if (dist < sensorRadius) SwitchState(AIState.Strategizing);
                 break;
-
-            case AIState.Strategizing:
-                _decisionTimer += Time.deltaTime;
-                if (dist < 1.5f && Random.value < currentPersona.aggression)
-                {
-                    _plannedAttack = availableAttacks[0]; 
-                    StartCoroutine(ExecuteAttackRoutine());
-                    return;
-                }
-
-                if (_decisionTimer > currentPersona.decisionFrequency)
-                {
-                    _plannedAttack = ChooseNextAttackStrategy();
-                    SwitchState(AIState.Maneuvering);
-                }
-                break;
-
             case AIState.Maneuvering:
-                if (IsPositionedForPlan(dist))
-                {
-                    StartCoroutine(ExecuteAttackRoutine());
-                }
+                if (IsPositionedForPlan(dist)) StartCoroutine(ExecuteAttackRoutine());
                 _decisionTimer += Time.deltaTime;
-                if (_decisionTimer > 5.0f)
-                {
-                    _plannedAttack = null;
-                    SwitchState(AIState.Strategizing);
-                }
+                if (_decisionTimer > 5.0f) { _plannedAttack = null; SwitchState(AIState.Strategizing); }
                 break;
-
             case AIState.Retreating:
-                if (_retreatType == 0) // Bait
-                {
-                    if (dist < 2.0f) { StartCoroutine(ExecuteAttackRoutine()); return; }
-                    if (dist > currentPersona.preferredCombatRange) SwitchState(AIState.Strategizing);
-                }
-                else if (_retreatType == 1) // Reset
-                {
-                    if (dist > 7.0f) SwitchState(AIState.Strategizing);
-                }
+                if (dist > currentPersona.preferredCombatRange + 2f) SwitchState(AIState.Strategizing);
+                if (_decisionTimer > 2.5f) SwitchState(AIState.Strategizing); 
+                _decisionTimer += Time.deltaTime;
                 break;
         }
     }
 
-    // --- THE BODY ---
     void ExecuteStateMovement(float dist)
     {
-        switch (_currentState)
+        switch (currentState)
         {
             case AIState.Strategizing:
                 _agent.isStopped = true;
                 HandleCirclingMovement();
                 break;
-
             case AIState.Maneuvering:
                 if (_plannedAttack == null) return;
                 _agent.isStopped = false;
-                
-                float targetRange = _plannedAttack.optimalRange;
-
-                if (dist > targetRange + _plannedAttack.rangeTolerance)
-                {
-                    _agent.SetDestination(_target.position);
-                    UpdateAnim(0, 1); 
+                if (dist > _plannedAttack.optimalRange + 0.5f) { _agent.SetDestination(_target.position); UpdateAnim(0, 1); }
+                else if (dist < _plannedAttack.optimalRange - 0.5f) { 
+                    Vector3 flee = (transform.position - _target.position).normalized;
+                    _agent.SetDestination(transform.position + flee); 
+                    UpdateAnim(0, -1); 
                 }
-                else if (dist < targetRange - _plannedAttack.rangeTolerance)
-                {
-                    Vector3 fleeDir = (transform.position - _target.position).normalized;
-                    _agent.SetDestination(transform.position + fleeDir * 2f);
-                    UpdateAnim(0, -1);
-                }
-                else
-                {
-                    _agent.isStopped = true;
-                    UpdateAnim(0, 0);
-                }
+                else { _agent.isStopped = true; UpdateAnim(0, 0); }
                 break;
-
             case AIState.Retreating:
                 _agent.isStopped = false;
-                Vector3 retreatPos = transform.position + (transform.position - _target.position).normalized * 4f;
-                _agent.SetDestination(retreatPos);
+                Vector3 ret = transform.position + (transform.position - _target.position).normalized * 3f;
+                _agent.SetDestination(ret);
                 UpdateAnim(0, -1);
                 break;
         }
     }
 
-    // --- ATTACK EXECUTION (UPDATED FOR COMBO) ---
+    void StartAttack(EnemyAttack attack)
+    {
+        _plannedAttack = attack;
+        StartCoroutine(ExecuteAttackRoutine());
+    }
+
     IEnumerator ExecuteAttackRoutine()
     {
         _isActionLocked = true;
         _agent.isStopped = true;
         SwitchState(AIState.Attacking);
         
-        // Use planned attack or fallback
         _currentExecutingAttack = _plannedAttack ?? availableAttacks[0];
         
-        // Trigger Animation
+        // --- NEW: Mark as used for Cooldowns ---
+        _currentExecutingAttack.lastTimeUsed = Time.time;
+
+        OnEnemyAttackAttempt?.Invoke(_currentExecutingAttack.name);
+
         _animator.SetInteger(AttackIndex, _currentExecutingAttack.animationIndex);
         _animator.SetTrigger(TriggerAttack);
 
-        // --- SPECIAL LOGIC: CHECK FOR COMBO ATTACK ---
-        if (_currentExecutingAttack.name == "Combo Attack")
+        float timer = 0f;
+        while (timer < _currentExecutingAttack.windUpTime) 
         {
-            // === HARDCODED COMBO TIMING ===
-            // Tweak these numbers to match your specific animation visual
-            
-            // HIT 1
-            float windup1 = 0.7f;
-            float duration1 = 0.85f;
-            
-            // HIT 2 (Time between end of Hit 1 and start of Hit 2)
-            float windup2 = 0.1f; 
-            float duration2 = 0.85f;
-
-            // HIT 3 (Time between end of Hit 2 and start of Hit 3)
-            float windup3 = 0.1f;
-            float duration3 = 0.85f;
-
-            // --- EXECUTE HIT 1 ---
-            float timer = 0f;
-            while (timer < windup1) 
-            {
-                FaceTarget(); // Track player for first hit
-                timer += Time.deltaTime;
-                yield return null;
-            }
-            canDealDamage = true;
-            yield return new WaitForSeconds(duration1);
-            canDealDamage = false;
-
-            // --- EXECUTE HIT 2 ---
-            // Optional: FaceTarget() here if you want tracking on second swing
-            yield return new WaitForSeconds(windup2); 
-            canDealDamage = true;
-            yield return new WaitForSeconds(duration2);
-            canDealDamage = false;
-
-            // --- EXECUTE HIT 3 ---
-            // Optional: FaceTarget() here if you want tracking on third swing
-            yield return new WaitForSeconds(windup3); 
-            canDealDamage = true;
-            yield return new WaitForSeconds(duration3);
-            canDealDamage = false;
-
-            // --- CALCULATE REMAINING TIME ---
-            // Total time spent so far
-            float timeSpent = windup1 + duration1 + windup2 + duration2 + windup3 + duration3;
-            float remaining = _currentExecutingAttack.totalDuration - timeSpent;
-            
-            if (remaining > 0) yield return new WaitForSeconds(remaining);
-        }
-        else 
-        {
-            // === STANDARD SINGLE-HIT LOGIC (Your existing code) ===
-            float currentWindUp = _currentExecutingAttack.windUpTime;
-            float currentDamageWindow = _currentExecutingAttack.damageDuration;
-            float currentTotalDuration = _currentExecutingAttack.totalDuration;
-
-            float timer = 0f;
-            while (timer < currentWindUp) 
-            {
-                if (_currentExecutingAttack.tracksPlayerDuringWindup) FaceTarget();
-                timer += Time.deltaTime;
-                yield return null;
-            }
-
-            canDealDamage = true;
-            yield return new WaitForSeconds(currentDamageWindow);
-            canDealDamage = false;
-
-            float remaining = currentTotalDuration - currentWindUp - currentDamageWindow;
-            if (remaining > 0) yield return new WaitForSeconds(remaining);
+            if (_currentExecutingAttack.tracksPlayerDuringWindup) FaceTarget();
+            timer += Time.deltaTime;
+            yield return null;
         }
 
-        // --- POST-ATTACK DECISION ---
-        if (Random.value < currentPersona.fear)
-        {
-            _retreatType = 1; // Reset
-            SwitchState(AIState.Retreating);
-        }
-        else
-        {
-            SwitchState(AIState.Strategizing);
-        }
+        canDealDamage = true;
+        yield return new WaitForSeconds(_currentExecutingAttack.damageDuration);
+        canDealDamage = false;
+
+        float remaining = _currentExecutingAttack.totalDuration - _currentExecutingAttack.windUpTime - _currentExecutingAttack.damageDuration;
+        if (remaining > 0) yield return new WaitForSeconds(remaining);
 
         _plannedAttack = null; 
-        _currentExecutingAttack = null;
         _isActionLocked = false;
-        _decisionTimer = 0;
+        
+        if (Random.value < currentPersona.fear) SwitchState(AIState.Retreating);
+        else SwitchState(AIState.Strategizing);
     }
 
-    // --- PARRY LOGIC ---
-    public void GetParried()
-    {
-        StopAllCoroutines(); 
-        _isActionLocked = true;
-        _agent.isStopped = true;
-        canDealDamage = false; 
-        SwitchState(AIState.Stunned); 
-        StartCoroutine(ParryReboundRoutine());
-    }
+    public void RegisterHit() { if (_currentExecutingAttack != null) OnEnemyAttackSuccess?.Invoke(_currentExecutingAttack.name); }
 
-    private IEnumerator ParryReboundRoutine()
+    public void GetParried() {
+        StopAllCoroutines(); _isActionLocked = true; canDealDamage = false;
+        SwitchState(AIState.Stunned); OnParrySuccess?.Invoke();
+        StartCoroutine(ParryRoutine());
+    }
+    IEnumerator ParryRoutine() 
     {
+        // 1. Clear any pending triggers so they don't fire late
         _animator.ResetTrigger(TriggerAttack);
-        _animator.SetFloat(AttackSpeedHash, -1.0f);
-        yield return new WaitForSeconds(0.4f);
-        _animator.SetFloat(AttackSpeedHash, 0f);
-        yield return new WaitForSeconds(1.5f);
-        _animator.SetFloat(AttackSpeedHash, 1.0f);
-        _animator.CrossFade("Locomotion", 0.2f);
-        _retreatType = 1; 
-        SwitchState(AIState.Retreating); 
-        _isActionLocked = false;
+
+        // 2. THE REBOUND (Reverse the swing quickly)
+        // We set it to -1.5f so it violently bounces backward, rather than just playing in slow reverse.
+        _animator.SetFloat(AttackSpeedHash, -1.5f); 
+        
+        // Wait for just 0.3 seconds. This only rewinds the very end of the swing.
+        yield return new WaitForSeconds(0.3f);
+
+        // 3. RESET ATTACK SPEED
+        // Vital so future attacks don't stay broken
+        _animator.SetFloat(AttackSpeedHash, 1f); 
+
+        // 4. THE STUN
+        // We force the animator to abort the attack and smoothly blend into the Stun animation.
+        _animator.CrossFade("Stun", 0.15f);
+
+        // Wait for the duration of your Stun animation (Adjust this 1.5f to match your actual clip length)
+        yield return new WaitForSeconds(1.1f);
+
+        // 5. RECOVERY
+        // Smoothly blend back into the moving/idle blend tree. This prevents the old attack from continuing!
+        _animator.CrossFade("Locomotion", 0.25f);
+        
+        // Unlock AI logic
+        _isActionLocked = false; 
+
+        // Force the boss to back off after being humiliated
+        SwitchState(AIState.Retreating);
     }
 
-    // --- HELPERS ---
-    void UpdateDebugVisuals()
-    {
-        // Safe check: If we never found a valid color property, do nothing.
-        if (_swordMaterialInstance == null || string.IsNullOrEmpty(_colorPropertyName)) return;
-
-        if (canDealDamage)
-        {
-            _swordMaterialInstance.SetColor(_colorPropertyName, Color.red);
-        }
-        else
-        {
-            _swordMaterialInstance.SetColor(_colorPropertyName, _originalSwordColor);
-        }
-    }
-
-    // --- NEW: Helper for PlayerControl to get stats ---
-    public EnemyAttack GetCurrentAttack()
-    {
-        // Return the attack currently being executed (or the planned one)
-        return _currentExecutingAttack;
-    }
-
-    EnemyAttack ChooseNextAttackStrategy()
-    {
-        float totalWeight = 0;
-        foreach (var atk in availableAttacks) totalWeight += atk.weight;
-
-        float randomValue = Random.Range(0, totalWeight);
-        float cursor = 0;
-
-        foreach (var atk in availableAttacks)
-        {
-            cursor += atk.weight;
-            if (cursor >= randomValue) return atk;
-        }
-        return availableAttacks[0];
-    }
-
-    bool IsPositionedForPlan(float dist)
-    {
-        if (_plannedAttack == null) return false;
-        return Mathf.Abs(dist - _plannedAttack.optimalRange) <= _plannedAttack.rangeTolerance;
-    }
-
-    void HandleCirclingMovement()
+    void SwitchState(AIState newState) { if (currentState != newState) { currentState = newState; _decisionTimer = 0; } }
+    
+    // --- CIRCLING LOGIC ---
+    void HandleCirclingMovement() 
     {
         Vector3 toPlayer = (_target.position - transform.position).normalized;
         Vector3 tangent = Vector3.Cross(toPlayer, Vector3.up);
@@ -445,78 +426,66 @@ public class SkeletonAI : MonoBehaviour
         UpdateAnim(_strafeDirection, 0);
     }
 
-    void SwitchState(AIState newState)
-    {
-        if (_currentState == newState) return;
-        _currentState = newState;
-        _decisionTimer = 0; 
-        
-        if (newState == AIState.Retreating)
-            _retreatType = (Random.value > 0.5f) ? 0 : 1; 
+    void UpdateAnim(float x, float z) { _animator.SetFloat(MoveX, x, 0.1f, Time.deltaTime); _animator.SetFloat(MoveZ, z, 0.1f, Time.deltaTime); }
+    void FaceTarget() { 
+        Vector3 d = (_target.position - transform.position).normalized; d.y=0; 
+        if(d != Vector3.zero) transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(d), Time.deltaTime * 10f); 
     }
-
-    void UpdateAnim(float x, float z)
-    {
-        _animator.SetFloat(MoveX, x, 0.1f, Time.deltaTime);
-        _animator.SetFloat(MoveZ, z, 0.1f, Time.deltaTime);
+    bool IsPositionedForPlan(float d) { 
+        if(_plannedAttack == null) return false; 
+        return Mathf.Abs(d - _plannedAttack.optimalRange) <= _plannedAttack.rangeTolerance; 
     }
+    void UpdateDebugVisuals() { if (_swordMaterialInstance) _swordMaterialInstance.SetColor(_colorPropertyName, canDealDamage ? Color.red : _originalSwordColor); }
+    
+    // --- PROXY AGENT MODIFICATION: Remote Control Methods ---
 
-    void FaceTarget()
+    /// <summary>
+    /// Allows an external script (like the Proxy Agent) to drive movement.
+    /// </summary>
+    private Vector2 _smoothInputVector; 
+    public void SetMovementInput(float strafe, float forward)
     {
-        Vector3 dir = (_target.position - transform.position).normalized;
-        dir.y = 0;
-        if (dir != Vector3.zero) transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(dir), Time.deltaTime * 10f);
+        if (_isActionLocked || currentState == AIState.Stunned) return;
+
+        // --- THE FIX: SMOOTHING ---
+        // Lerp from current value to target value over time.
+        // 10f is the speed. Lower = Smoother/Sluggish. Higher = Snappier/Jittery.
+        _smoothInputVector = Vector2.Lerp(_smoothInputVector, new Vector2(strafe, forward), Time.deltaTime * 10f);
+
+        // 1. Update Animator parameters using smoothed values
+        UpdateAnim(_smoothInputVector.x, _smoothInputVector.y);
+
+        // 2. Physical Movement logic
+        Vector3 toPlayer = (_target.position - transform.position).normalized;
+        Vector3 tangent = Vector3.Cross(toPlayer, Vector3.up);
+
+        // Use smoothed values for movement too
+        Vector3 moveVec = (tangent * _smoothInputVector.x * circleSpeed) + (toPlayer * _smoothInputVector.y * circleSpeed);
+        _agent.Move(moveVec * Time.deltaTime);
     }
-
-    void OnDrawGizmos()
+    /// <summary>
+    /// Allows an external script to trigger a specific attack by its list index.
+    /// </summary>
+    public void RequestAttack(int attackIndex)
     {
-        if (!showDebugGizmos) return;
-        Transform activeBone = swordBone; 
-        if (_currentExecutingAttack != null && _currentExecutingAttack.useFootHitbox) activeBone = footBone;
-        if (activeBone == null) return;
+        if (_isActionLocked || currentState == AIState.Stunned) return;
 
-        if (canDealDamage)
+        if (attackIndex >= 0 && attackIndex < availableAttacks.Count)
         {
-            Gizmos.color = new Color(1, 0, 0, 0.5f); 
-            Gizmos.DrawSphere(activeBone.position, hitRadius);
-        }
-        else
-        {
-            Gizmos.color = Color.yellow;
-            Gizmos.DrawWireSphere(activeBone.position, hitRadius);
+            EnemyAttack attack = availableAttacks[attackIndex];
+            if (Time.time >= attack.lastTimeUsed + attack.cooldown)
+            {
+                StartAttack(attack);
+            }
         }
     }
-
-    // --- NEW: Public Method called by PlayerAttack.cs ---
-    public void TakeHit()
+    // Add these public getters
+    public float GetCurrentStrafe() => _animator.GetFloat(MoveX);
+    public float GetCurrentForward() => _animator.GetFloat(MoveZ);
+    public bool IsAttacking() => _isActionLocked; // Or check state
+    // --- Helper for PlayerControl to get stats ---
+    public EnemyAttack GetCurrentAttack()
     {
-        // HYPER-ARMOR CHECK:
-        // If we are locked in an action (Attacking, Stunned, etc), DO NOT FLINCH.
-        // We still take HP damage (handled by CharacterStats), but animation continues.
-        if (_isActionLocked) return;
-
-        // If we are just walking/idling/maneuvering, we get interrupted.
-        StopAllCoroutines(); // Stop any movement/strategy logic
-        _agent.isStopped = true;
-        _isActionLocked = true; // Lock briefly for the flinch duration
-
-        // Trigger Animation
-        _animator.SetTrigger(HitTrigger);
-
-        // Start Recovery
-        StartCoroutine(RecoverFromHit());
-    }
-
-    private IEnumerator RecoverFromHit()
-    {
-        // Wait for length of flinch animation (approx 0.5s)
-        yield return new WaitForSeconds(0.5f);
-
-        // Reset
-        _isActionLocked = false;
-        if (_agent.isOnNavMesh) _agent.isStopped = false;
-
-        // Force a tactical retreat after getting hit
-        SwitchState(AIState.Retreating);
+        return _currentExecutingAttack;
     }
 }
