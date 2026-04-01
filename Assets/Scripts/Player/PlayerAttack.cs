@@ -1,23 +1,23 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 using System.Collections;
-using System;
+using System; 
 
 public class PlayerAttack : MonoBehaviour
 {
-    public static event Action OnPlayerAttack;
+    public static event Action OnPlayerAttack; 
     public static event Action OnPlayerHitEnemy;
 
     [Header("Attack Settings")]
     [SerializeField] float attackDuration = 0.8f;
-    [SerializeField] float staminaCost = 20f;
+    [SerializeField] float staminaCost = 20f; 
     [SerializeField] int damageAmount = 15;
 
     [Header("Hitbox Settings")]
     [Tooltip("Assign an empty GameObject placed at the tip of your sword/weapon.")]
     public Transform attackPoint;
     public float attackRange = 1.5f;
-    public LayerMask enemyLayers;
+    public LayerMask enemyLayers; 
 
     [Header("Timing")]
     [Tooltip("Time into the animation when the hit actually registers.")]
@@ -28,8 +28,8 @@ public class PlayerAttack : MonoBehaviour
 
     private Walk _walkScript;
     private PlayerDodge _dodgeScript;
-    private CharacterStats _stats;
-    private PlayerBlock _blockScript;
+    private CharacterStats _stats; 
+    private PlayerBlock _blockScript; 
 
     private static readonly int AttackTrigger = Animator.StringToHash("Attack");
 
@@ -44,14 +44,19 @@ public class PlayerAttack : MonoBehaviour
 
     public void OnAttack(InputAction.CallbackContext context)
     {
-        if (context.started && CanAttemptAttack())
+        // Condition: Started input, not attacking, not dodging, and NOT blocking
+        if (context.started && !_isAttacking 
+            && (_dodgeScript == null || !_dodgeScript.IsDodging()) 
+            && (_blockScript == null || !_blockScript.IsBlocking)) 
         {
-            _stats.UseStamina(staminaCost);
-            StartCoroutine(AttackSequence());
-        }
-        else if (context.started)
-        {
-            Debug.Log("Not enough stamina to attack!");
+            if (_stats != null && _stats.UseStamina(staminaCost))
+            {
+                StartCoroutine(AttackSequence());
+            }
+            else
+            {
+                Debug.Log("Not enough stamina to attack!");
+            }
         }
     }
 
@@ -61,10 +66,10 @@ public class PlayerAttack : MonoBehaviour
         if (_walkScript != null) _walkScript.IsMovementLocked = true;
 
         _animator.SetTrigger(AttackTrigger);
-        OnPlayerAttack?.Invoke();
+        OnPlayerAttack?.Invoke(); 
 
         yield return new WaitForSeconds(hitRegistrationDelay);
-
+        
         CheckForHit();
 
         yield return new WaitForSeconds(attackDuration - hitRegistrationDelay);
@@ -81,11 +86,12 @@ public class PlayerAttack : MonoBehaviour
 
         foreach (Collider enemy in hitEnemies)
         {
+            // 1. Deal Damage
             CharacterStats enemyStats = enemy.GetComponent<CharacterStats>();
             if (enemyStats != null)
             {
                 enemyStats.TakeDamage(damageAmount);
-                OnPlayerHitEnemy?.Invoke();
+                OnPlayerHitEnemy.Invoke();
             }
             else
             {
@@ -93,10 +99,11 @@ public class PlayerAttack : MonoBehaviour
                 if (parentStats != null) parentStats.TakeDamage(damageAmount);
             }
 
+            // 2. Trigger Flinch (This MUST be inside the loop)
             SkeletonAI bossAI = enemy.GetComponentInParent<SkeletonAI>();
             if (bossAI != null)
             {
-                bossAI.TakeHit();
+                bossAI.TakeHit(); 
             }
         }
     }
@@ -111,25 +118,18 @@ public class PlayerAttack : MonoBehaviour
     {
         return _isAttacking;
     }
-
-    public float StaminaCost => staminaCost;
-    public float AttackRange => attackRange;
-
-    public bool CanAttemptAttack()
+    // Inside PlayerAttack.cs
+public void AttemptAttack()
+{
+    // Copy the logic from OnAttack but remove "context.started"
+    if (!_isAttacking 
+        && (_dodgeScript == null || !_dodgeScript.IsDodging()) 
+        && (_blockScript == null || !_blockScript.IsBlocking)) 
     {
-        return !_isAttacking
-            && (_dodgeScript == null || !_dodgeScript.IsDodging())
-            && (_blockScript == null || !_blockScript.IsBlocking)
-            && _stats != null
-            && _stats.currentStamina >= staminaCost;
-    }
-
-    public void AttemptAttack()
-    {
-        if (CanAttemptAttack())
+        if (_stats != null && _stats.UseStamina(staminaCost))
         {
-            _stats.UseStamina(staminaCost);
             StartCoroutine(AttackSequence());
         }
     }
+}
 }

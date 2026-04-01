@@ -22,7 +22,8 @@ public class PlayerBlock : MonoBehaviour
     {
         if (context.performed)
         {
-            if (!CanRaiseBlock()) return;
+            if (_dodgeScript != null && _dodgeScript.IsDodging()) return;
+            if (_attackScript != null && _attackScript.IsAttacking()) return;
 
             IsBlocking = true;
             if (_animator != null) _animator.SetBool(BlockingParam, true);
@@ -43,24 +44,21 @@ public class PlayerBlock : MonoBehaviour
         }
     }
 
-    public bool CanRaiseBlock()
-    {
-        return (_dodgeScript == null || !_dodgeScript.IsDodging())
-            && (_attackScript == null || !_attackScript.IsAttacking());
-    }
-
+    // --- OUR NEW LOGIC: Called by PlayerControl when Stamina is depleted ---
     public void ForceDropShield()
     {
         IsBlocking = false;
         if (_animator != null) _animator.SetBool(BlockingParam, false);
     }
 
+    // --- RESTORED: Needed by PlayerProxyAgent.cs for ML-Agents ---
     public void SetBlocking(bool blocking)
     {
         if (blocking)
         {
-            if (!CanRaiseBlock()) return;
-
+            if (_dodgeScript != null && _dodgeScript.IsDodging()) return;
+            if (_attackScript != null && _attackScript.IsAttacking()) return;
+            
             IsBlocking = true;
             if (_animator != null) _animator.SetBool(BlockingParam, true);
         }
