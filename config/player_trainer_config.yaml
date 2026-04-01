@@ -1,33 +1,34 @@
 behaviors:
-  PlayerProxy: 
+  PlayerProxy:
     trainer_type: ppo
     hyperparameters:
-      batch_size: 64        # Smaller batch for faster updates on simpler tasks
-      buffer_size: 2048
+      batch_size: 256
+      buffer_size: 4096
       learning_rate: 3.0e-4
-      beta: 0.005
-      epsilon: 0.2
+      beta: 0.0005
+      epsilon: 0.15
       lambd: 0.95
       num_epoch: 3
       learning_rate_schedule: linear
     network_settings:
-      normalize: false
-      hidden_units: 128     # Standard size for imitation
-      num_layers: 2
+      normalize: true
+      hidden_units: 256
+      num_layers: 3
+      memory:
+        sequence_length: 32
+        memory_size: 128
     reward_signals:
-      # We rely heavily on GAIL here to force "Style" matching
       gail:
         gamma: 0.99
-        strength: 0.5
-        demo_path: config/PlayerAggressive_50.demo # <--- YOUR FILE
-    
-    # Behavioral Cloning is CRITICAL for Proxies.
-    # It forces the agent to copy your inputs directly.
+        strength: 0.1
+        use_actions: true
+        demo_path: Assets/Demonstrations
+
     behavioral_cloning:
-      strength: 0.5         # 50% Cloning, 50% RL optimization
-      demo_path: config/PlayerAggressive_50.demo
-      steps: 50000          # Clone hard for the first 50k steps
-      
-    max_steps: 500000
-    time_horizon: 64
+      strength: 1.0
+      demo_path: Assets/Demonstrations
+      steps: 750000
+
+    max_steps: 750000
+    time_horizon: 128
     summary_freq: 10000

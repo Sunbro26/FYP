@@ -1,0 +1,29 @@
+{
+    "SkeletonAI": {
+        "checkpoints": [
+            {
+                "steps": 0,
+                "file_path": "results\\SkeletonProxyBase2\\SkeletonAI\\SkeletonAI-0.onnx",
+                "reward": null,
+                "creation_time": 1772442002.958545,
+                "auxillary_file_paths": [
+                    "results\\SkeletonProxyBase2\\SkeletonAI\\SkeletonAI-0.pt"
+                ]
+            }
+        ],
+        "final_checkpoint": {
+            "steps": 0,
+            "file_path": "results\\SkeletonProxyBase2\\SkeletonAI.onnx",
+            "reward": null,
+            "creation_time": 1772442002.958545,
+            "auxillary_file_paths": [
+                "results\\SkeletonProxyBase2\\SkeletonAI\\SkeletonAI-0.pt"
+            ]
+        }
+    },
+    "metadata": {
+        "stats_format_version": "0.3.0",
+        "mlagents_version": "1.1.0",
+        "torch_version": "2.1.1+cpu"
+    }
+}

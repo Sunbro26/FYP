@@ -5,33 +5,29 @@ using System;
 
 public class PlayerDodge : MonoBehaviour
 {
-    // --- EVENTS ---
-    public static event Action OnDodgeAttempt; // Fired when button pressed
-    public static event Action OnDodgeSuccess; // Fired when I-Frame absorbs a hit
+    public static event Action OnDodgeAttempt;
+    public static event Action OnDodgeSuccess;
 
     [Header("Dodge Settings")]
     public float dodgeDistance = 5f;
     public float dodgeDuration = 0.6f;
     public float dodgeRotationSpeed = 15f;
-    
-    // --- NEW: STAMINA SETTINGS ---[Header("Stamina Settings")]
+
+    [Header("Stamina Settings")]
     [Tooltip("How much stamina it costs to perform a dodge roll.")]
-    public float staminaCost = 15f; 
+    public float staminaCost = 15f;
 
     [Header("I-Frame Settings")]
-    public float iFrameStartDelay = 0.2f; 
+    public float iFrameStartDelay = 0.2f;
     public float iFrameDuration = 0.3f;
 
     public bool IsInvincible { get; private set; }
 
-    // References
     private CharacterController _characterController;
     private Animator _animator;
     private Walk _walkScript;
     private PlayerAttack _attackScript;
     private Transform _cameraTransform;
-    
-    // --- NEW: STATS REFERENCE ---
     private CharacterStats _stats;
 
     private bool _isDodging = false;
@@ -44,43 +40,42 @@ public class PlayerDodge : MonoBehaviour
         _walkScript = GetComponent<Walk>();
         _attackScript = GetComponent<PlayerAttack>();
         _cameraTransform = Camera.main.transform;
-        
-        // --- NEW: INITIALIZE STATS ---
         _stats = GetComponent<CharacterStats>();
     }
 
     public bool IsDodging() => _isDodging;
+    public float StaminaCost => staminaCost;
+
+    public bool CanAttemptDodge()
+    {
+        return !_isDodging
+            && (_attackScript == null || !_attackScript.IsAttacking())
+            && _stats != null
+            && _stats.currentStamina >= staminaCost;
+    }
 
     public void OnDodge(InputAction.CallbackContext context)
     {
-        if (context.started && !_isDodging && (_attackScript == null || !_attackScript.IsAttacking()))
+        if (context.started && CanAttemptDodge())
         {
-            // --- NEW: STAMINA CHECK ---
-            if (_stats != null && !_stats.UseStamina(staminaCost))
-            {
-                Debug.Log("Not enough stamina to dodge!");
-                return; // Stop the dodge from happening
-            }
+            _stats.UseStamina(staminaCost);
 
             if (_walkScript != null) _walkScript.IsMovementLocked = true;
-            
-            // Fire Attempt Telemetry
             OnDodgeAttempt?.Invoke();
-            
             StartCoroutine(DodgeSequence());
+        }
+        else if (context.started)
+        {
+            Debug.Log("Not enough stamina to dodge!");
         }
     }
 
-    // --- CALL THIS FROM YOUR HEALTH SCRIPT ---
     public void RegisterPerfectDodge()
     {
-        // Only count it if we are actually currently invincible
         if (IsInvincible)
         {
             Debug.Log("PERFECT DODGE! Event Fired.");
             OnDodgeSuccess?.Invoke();
-            
-            // Optional: Add "Time Slow" or "Flash" effect here for game feel
         }
     }
 
@@ -90,11 +85,8 @@ public class PlayerDodge : MonoBehaviour
         if (_attackScript != null) _attackScript.enabled = false;
 
         _animator.SetTrigger(DodgeTrigger);
-
-        // Start I-Frames
         StartCoroutine(HandleIFrames());
 
-        // Calculate Direction
         Vector2 moveInput = _walkScript.GetMoveInput();
         Vector3 dodgeDirection;
         Vector3 cameraForward = new Vector3(_cameraTransform.forward.x, 0, _cameraTransform.forward.z).normalized;
@@ -103,11 +95,10 @@ public class PlayerDodge : MonoBehaviour
         if (moveInput.magnitude > 0.1f)
             dodgeDirection = (cameraForward * moveInput.y + cameraRight * moveInput.x).normalized;
         else
-            dodgeDirection = cameraForward; // Backstep or forward dash if no input?
+            dodgeDirection = -transform.forward;
 
         Quaternion targetRotation = Quaternion.LookRotation(dodgeDirection);
 
-        // Movement Loop
         float timer = 0f;
         while (timer < dodgeDuration)
         {
@@ -117,9 +108,9 @@ public class PlayerDodge : MonoBehaviour
             timer += Time.deltaTime;
             yield return null;
         }
-        
+
         transform.rotation = targetRotation;
-        IsInvincible = false; // Safety Reset
+        IsInvincible = false;
 
         if (_walkScript != null) _walkScript.IsMovementLocked = false;
         if (_attackScript != null) _attackScript.enabled = true;
@@ -134,18 +125,12 @@ public class PlayerDodge : MonoBehaviour
         yield return new WaitForSeconds(iFrameDuration);
         IsInvincible = false;
     }
-    
-    // Inside PlayerDodge.cs
+
     public void AttemptDodge()
     {
-        if (!_isDodging && (_attackScript == null || !_attackScript.IsAttacking()))
+        if (CanAttemptDodge())
         {
-            // --- NEW: STAMINA CHECK FOR THE SECONDARY METHOD ---
-            if (_stats != null && !_stats.UseStamina(staminaCost))
-            {
-                Debug.Log("Not enough stamina to dodge!");
-                return; 
-            }
+            _stats.UseStamina(staminaCost);
 
             if (_walkScript != null) _walkScript.IsMovementLocked = true;
             OnDodgeAttempt?.Invoke();

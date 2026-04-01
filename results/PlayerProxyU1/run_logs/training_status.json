@@ -1,0 +1,29 @@
+{
+    "PlayerProxy": {
+        "checkpoints": [
+            {
+                "steps": 256,
+                "file_path": "results\\PlayerProxyU1\\PlayerProxy\\PlayerProxy-256.onnx",
+                "reward": null,
+                "creation_time": 1775030027.0698817,
+                "auxillary_file_paths": [
+                    "results\\PlayerProxyU1\\PlayerProxy\\PlayerProxy-256.pt"
+                ]
+            }
+        ],
+        "final_checkpoint": {
+            "steps": 256,
+            "file_path": "results\\PlayerProxyU1\\PlayerProxy.onnx",
+            "reward": null,
+            "creation_time": 1775030027.0698817,
+            "auxillary_file_paths": [
+                "results\\PlayerProxyU1\\PlayerProxy\\PlayerProxy-256.pt"
+            ]
+        }
+    },
+    "metadata": {
+        "stats_format_version": "0.3.0",
+        "mlagents_version": "1.1.0",
+        "torch_version": "2.1.1+cpu"
+    }
+}

@@ -340,21 +340,22 @@ public class SkeletonAI : MonoBehaviour
             float windup3 = 0.1f; float duration3 = 0.85f;
 
             _attackTimer = 0f;
-            while (_attackTimer < windup1) 
-            {
-                FaceTarget(); 
-               _attackTimer += Time.deltaTime;
-                yield return null;
-            }
-            canDealDamage = true; yield return new WaitForSeconds(duration1); canDealDamage = false;
-            yield return new WaitForSeconds(windup2); 
-            canDealDamage = true; yield return new WaitForSeconds(duration2); canDealDamage = false;
-            yield return new WaitForSeconds(windup3); 
-            canDealDamage = true; yield return new WaitForSeconds(duration3); canDealDamage = false;
+            yield return WaitWithAttackTimer(windup1, true);
+            canDealDamage = true;
+            yield return WaitWithAttackTimer(duration1);
+            canDealDamage = false;
+            yield return WaitWithAttackTimer(windup2);
+            canDealDamage = true;
+            yield return WaitWithAttackTimer(duration2);
+            canDealDamage = false;
+            yield return WaitWithAttackTimer(windup3);
+            canDealDamage = true;
+            yield return WaitWithAttackTimer(duration3);
+            canDealDamage = false;
 
             float timeSpent = windup1 + duration1 + windup2 + duration2 + windup3 + duration3;
             float remaining = _currentExecutingAttack.totalDuration - timeSpent;
-            if (remaining > 0) yield return new WaitForSeconds(remaining);
+            if (remaining > 0) yield return WaitWithAttackTimer(remaining);
         }
         else 
         {
@@ -364,19 +365,14 @@ public class SkeletonAI : MonoBehaviour
             float currentTotalDuration = _currentExecutingAttack.totalDuration;
 
             _attackTimer = 0f;
-            while (_attackTimer < currentWindUp) 
-            {
-                if (_currentExecutingAttack.tracksPlayerDuringWindup) FaceTarget();
-               _attackTimer += Time.deltaTime;
-                yield return null;
-            }
+            yield return WaitWithAttackTimer(currentWindUp, _currentExecutingAttack.tracksPlayerDuringWindup);
 
             canDealDamage = true;
-            yield return new WaitForSeconds(currentDamageWindow);
+            yield return WaitWithAttackTimer(currentDamageWindow);
             canDealDamage = false;
 
             float remaining = currentTotalDuration - currentWindUp - currentDamageWindow;
-            if (remaining > 0) yield return new WaitForSeconds(remaining);
+            if (remaining > 0) yield return WaitWithAttackTimer(remaining);
         }
 
         float retreatChance = (1.0f - currentPersona.aggression) + currentPersona.fear;
@@ -393,13 +389,29 @@ public class SkeletonAI : MonoBehaviour
         }
 
         _plannedAttack = null; 
+        _currentExecutingAttack = null;
+        _attackTimer = 0f;
         _isActionLocked = false;
+    }
+
+    private IEnumerator WaitWithAttackTimer(float duration, bool faceTargetDuringWait = false)
+    {
+        float elapsed = 0f;
+        while (elapsed < duration)
+        {
+            if (faceTargetDuringWait) FaceTarget();
+
+            float step = Mathf.Min(Time.deltaTime, duration - elapsed);
+            elapsed += step;
+            _attackTimer += step;
+            yield return null;
+        }
     }
 
         public float GetAttackProgress()
     {
         if (_currentExecutingAttack == null || _currentExecutingAttack.totalDuration == 0) return 0f;
-        return _attackTimer / _currentExecutingAttack.totalDuration;
+        return Mathf.Clamp01(_attackTimer / _currentExecutingAttack.totalDuration);
     }
 
     // --- PARRY LOGIC ---
@@ -409,6 +421,8 @@ public class SkeletonAI : MonoBehaviour
         _isActionLocked = true;
         _agent.isStopped = true;
         canDealDamage = false; 
+        _attackTimer = 0f;
+        _currentExecutingAttack = null;
         SwitchState(AIState.Stunned); 
         OnParrySuccess?.Invoke();
         StartCoroutine(ParryReboundRoutine());
@@ -440,6 +454,8 @@ public class SkeletonAI : MonoBehaviour
         StopAllCoroutines(); 
         _agent.isStopped = true;
         _isActionLocked = true; 
+        _attackTimer = 0f;
+        _currentExecutingAttack = null;
 
         _animator.SetTrigger(HitTrigger);
         StartCoroutine(RecoverFromHit());
@@ -486,15 +502,16 @@ public class SkeletonAI : MonoBehaviour
 
     // --- HELPERS ---
     public EnemyAttack GetCurrentAttack() => _currentExecutingAttack;
+    public float GetAttackElapsedTime() => _attackTimer;
     public float GetCurrentStrafe() => _animator.GetFloat(MoveX);
     public float GetCurrentForward() => _animator.GetFloat(MoveZ);
-    public bool IsAttacking() => _isActionLocked;
+    public bool IsAttacking() => currentState == AIState.Attacking;
 
     void SwitchState(AIState newState) {
          if (currentState != newState) {
              currentState = newState;
               _decisionTimer = 0; } }
-    
+
     void HandleCirclingMovement() 
     {
         Vector3 toPlayer = (_target.position - transform.position).normalized;
@@ -558,6 +575,7 @@ public class SkeletonAI : MonoBehaviour
         canDealDamage = false;
         _currentExecutingAttack = null;
         _plannedAttack = null;
+        _attackTimer = 0f;
         _decisionTimer = 0;
         
         // Reset Visuals
