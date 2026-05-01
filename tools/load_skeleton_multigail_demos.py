@@ -13,10 +13,13 @@ from mlagents_envs.base_env import BehaviorSpec
 
 @dataclass
 class DemoFileSummary:
+    file_index: int
     path: str
     style: str
     size_bytes: int
     step_count: int
+    row_start: int
+    row_end: int
     raw_observation_size: int
     conditioned_observation_size: int
     continuous_action_size: int
@@ -223,12 +226,12 @@ def make_discrete_one_hot(discrete_actions: np.ndarray, branch_size: int) -> np.
 
 
 def concatenate_critic_inputs(
-    conditioned_observations: np.ndarray,
+    raw_observations: np.ndarray,
     continuous_actions: np.ndarray,
     discrete_one_hot: np.ndarray,
 ) -> np.ndarray:
     return np.concatenate(
-        [conditioned_observations, continuous_actions, discrete_one_hot],
+        [raw_observations, continuous_actions, discrete_one_hot],
         axis=1,
     ).astype(np.float32)
 
@@ -374,24 +377,29 @@ def load_dataset(
 
     valid_files: List[DemoFileSummary] = []
     combined_obs: List[np.ndarray] = []
-    combined_conditioned_obs: List[np.ndarray] = []
+    combined_policy_obs: List[np.ndarray] = []
     combined_cont: List[np.ndarray] = []
     combined_disc: List[np.ndarray] = []
     combined_one_hot: List[np.ndarray] = []
     combined_style_index: List[np.ndarray] = []
+    combined_file_index: List[np.ndarray] = []
+    combined_row_in_file: List[np.ndarray] = []
 
     per_style_buffers: Dict[str, Dict[str, List[np.ndarray]]] = {
         style_name: {
             "raw_obs": [],
-            "conditioned_obs": [],
+            "policy_obs": [],
             "continuous": [],
             "discrete": [],
             "one_hot": [],
             "style_index": [],
+            "file_index": [],
+            "row_in_file": [],
         }
         for style_name in style_order
     }
 
+    total_rows_so_far = 0
     for candidate in candidates:
         if candidate.parsed.raw_observation_size != target_raw_obs_size:
             skipped_files.append(
@@ -408,10 +416,10 @@ def load_dataset(
             candidate.effective_branch_size,
         )
         style_vector = build_style_vector(candidate.style, style_order)
-        conditioned_obs = candidate.parsed.observations
+        policy_obs = candidate.parsed.observations
         if append_style_conditioning:
             tiled_style = np.repeat(style_vector.reshape(1, -1), candidate.parsed.step_count, axis=0)
-            conditioned_obs = np.concatenate(
+            policy_obs = np.concatenate(
                 [candidate.parsed.observations, tiled_style],
                 axis=1,
             ).astype(np.float32)
@@ -421,36 +429,49 @@ def load_dataset(
             style_order.index(candidate.style),
             dtype=np.int64,
         )
+        file_index = len(valid_files)
+        row_start = total_rows_so_far
+        row_end = row_start + candidate.parsed.step_count
+        row_in_file = np.arange(candidate.parsed.step_count, dtype=np.int64)
+        file_index_column = np.full((candidate.parsed.step_count,), file_index, dtype=np.int64)
 
         valid_files.append(
             DemoFileSummary(
+                file_index=file_index,
                 path=str(candidate.path),
                 style=candidate.style,
                 size_bytes=candidate.size_bytes,
                 step_count=candidate.parsed.step_count,
+                row_start=row_start,
+                row_end=row_end,
                 raw_observation_size=candidate.parsed.raw_observation_size,
-                conditioned_observation_size=int(conditioned_obs.shape[1]),
+                conditioned_observation_size=int(policy_obs.shape[1]),
                 continuous_action_size=candidate.parsed.continuous_action_size,
                 declared_discrete_branch_size=candidate.parsed.declared_discrete_branch_size,
                 effective_discrete_branch_size=candidate.effective_branch_size,
                 max_raw_discrete_action=candidate.parsed.observed_max_discrete_action,
             )
         )
+        total_rows_so_far = row_end
 
         combined_obs.append(candidate.parsed.observations)
-        combined_conditioned_obs.append(conditioned_obs)
+        combined_policy_obs.append(policy_obs)
         combined_cont.append(candidate.parsed.continuous_actions)
         combined_disc.append(candidate.remapped_discrete)
         combined_one_hot.append(discrete_one_hot)
         combined_style_index.append(style_index)
+        combined_file_index.append(file_index_column)
+        combined_row_in_file.append(row_in_file)
 
         per_style = per_style_buffers[candidate.style]
         per_style["raw_obs"].append(candidate.parsed.observations)
-        per_style["conditioned_obs"].append(conditioned_obs)
+        per_style["policy_obs"].append(policy_obs)
         per_style["continuous"].append(candidate.parsed.continuous_actions)
         per_style["discrete"].append(candidate.remapped_discrete)
         per_style["one_hot"].append(discrete_one_hot)
         per_style["style_index"].append(style_index)
+        per_style["file_index"].append(file_index_column)
+        per_style["row_in_file"].append(row_in_file)
 
     style_file_counts = {
         style_name: sum(1 for item in valid_files if item.style == style_name)
@@ -476,8 +497,8 @@ def load_dataset(
     critic_input_size = None
     if raw_obs_size is not None:
         conditioned_obs_size = raw_obs_size + (len(style_order) if append_style_conditioning else 0)
-    if conditioned_obs_size is not None and cont_size is not None and effective_branch_size is not None:
-        critic_input_size = conditioned_obs_size + cont_size + effective_branch_size
+    if raw_obs_size is not None and cont_size is not None and effective_branch_size is not None:
+        critic_input_size = raw_obs_size + cont_size + effective_branch_size
 
     summary = DatasetSummary(
         style_order=style_order,
@@ -495,18 +516,21 @@ def load_dataset(
         schema_report=schema_report,
     )
 
-    if output_dir is not None and combined_conditioned_obs:
+    if output_dir is not None and combined_policy_obs:
         output_dir.mkdir(parents=True, exist_ok=True)
 
         combined_payload = {
             "raw_observations": np.concatenate(combined_obs, axis=0),
-            "observations": np.concatenate(combined_conditioned_obs, axis=0),
+            "policy_observations": np.concatenate(combined_policy_obs, axis=0),
+            "observations": np.concatenate(combined_policy_obs, axis=0),
             "continuous_actions": np.concatenate(combined_cont, axis=0),
             "discrete_actions": np.concatenate(combined_disc, axis=0),
             "discrete_one_hot": np.concatenate(combined_one_hot, axis=0),
             "style_index": np.concatenate(combined_style_index, axis=0),
+            "file_index": np.concatenate(combined_file_index, axis=0),
+            "row_in_file": np.concatenate(combined_row_in_file, axis=0),
             "critic_inputs": concatenate_critic_inputs(
-                np.concatenate(combined_conditioned_obs, axis=0),
+                np.concatenate(combined_obs, axis=0),
                 np.concatenate(combined_cont, axis=0),
                 np.concatenate(combined_one_hot, axis=0),
             ),
@@ -514,17 +538,20 @@ def load_dataset(
         save_npz(output_dir / "skeleton_multigail_dataset.npz", combined_payload)
 
         for style_name, payload_lists in per_style_buffers.items():
-            if not payload_lists["conditioned_obs"]:
+            if not payload_lists["policy_obs"]:
                 continue
             payload = {
                 "raw_observations": np.concatenate(payload_lists["raw_obs"], axis=0),
-                "observations": np.concatenate(payload_lists["conditioned_obs"], axis=0),
+                "policy_observations": np.concatenate(payload_lists["policy_obs"], axis=0),
+                "observations": np.concatenate(payload_lists["policy_obs"], axis=0),
                 "continuous_actions": np.concatenate(payload_lists["continuous"], axis=0),
                 "discrete_actions": np.concatenate(payload_lists["discrete"], axis=0),
                 "discrete_one_hot": np.concatenate(payload_lists["one_hot"], axis=0),
                 "style_index": np.concatenate(payload_lists["style_index"], axis=0),
+                "file_index": np.concatenate(payload_lists["file_index"], axis=0),
+                "row_in_file": np.concatenate(payload_lists["row_in_file"], axis=0),
                 "critic_inputs": concatenate_critic_inputs(
-                    np.concatenate(payload_lists["conditioned_obs"], axis=0),
+                    np.concatenate(payload_lists["raw_obs"], axis=0),
                     np.concatenate(payload_lists["continuous"], axis=0),
                     np.concatenate(payload_lists["one_hot"], axis=0),
                 ),
@@ -541,7 +568,7 @@ def load_dataset(
                 "per_style": {
                     style_name: str(output_dir / f"{style_name}_dataset.npz")
                     for style_name in style_order
-                    if per_style_buffers[style_name]["conditioned_obs"]
+                    if per_style_buffers[style_name]["policy_obs"]
                 },
             },
         }

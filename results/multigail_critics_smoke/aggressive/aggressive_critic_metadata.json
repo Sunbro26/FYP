@@ -1,0 +1,63 @@
+{
+  "style": "aggressive",
+  "positive_style_index": 0,
+  "input_size": 39,
+  "hidden_sizes": [
+    256,
+    256
+  ],
+  "best_epoch": 1,
+  "loss_type": "weighted_lsgan_mse",
+  "target_scores": {
+    "positive": 1.0,
+    "negative": -1.0
+  },
+  "critic_contract": {
+    "input_name": "state_action",
+    "output_name": "discriminator_score",
+    "raw_observation_size": 28,
+    "continuous_action_size": 2,
+    "discrete_one_hot_size": 9,
+    "critic_input_size": 39,
+    "style_conditioning_used_by_policy": true,
+    "style_conditioning_used_by_critic": false,
+    "loss_type": "weighted_lsgan_mse",
+    "target_scores": {
+      "positive": 1.0,
+      "negative": -1.0
+    },
+    "reward_transform": "max(0, 1 - 0.25 * (score - 1)^2)"
+  },
+  "train_metrics": {
+    "style": "aggressive",
+    "best_epoch": 1,
+    "train_loss": 4.3984733059729934e-05,
+    "validation_loss": 5.1745260701189674e-05,
+    "train_accuracy": 0.9648099738588377,
+    "validation_accuracy": 0.9584728734092431,
+    "train_positive_score_mean": 0.7398388385772705,
+    "train_negative_score_mean": -0.6550542712211609,
+    "validation_positive_score_mean": 0.47447583079338074,
+    "validation_negative_score_mean": -0.9279904365539551,
+    "input_size": 39
+  },
+  "split": {
+    "train_files": [
+      "config\\SkeletonDemos\\SkeletonAggressi_5.demo",
+      "config\\SkeletonDemos\\SkeletonAggressi_7.demo",
+      "config\\SkeletonDemos\\SkeletonDefensiv.demo",
+      "config\\SkeletonDemos\\SkeletonDefensiv_0.demo",
+      "config\\SkeletonDemos\\SkeletonDefensiv_2.demo",
+      "config\\SkeletonDemos\\SkeletonDefensiv_3.demo",
+      "config\\SkeletonDemos\\SkeletonDefensiv_4.demo",
+      "config\\SkeletonDemos\\SkeletonDefensiv_5.demo"
+    ],
+    "validation_files": [
+      "config\\SkeletonDemos\\SkeletonAggressi_9.demo",
+      "config\\SkeletonDemos\\SkeletonDefensiv_1.demo"
+    ],
+    "partial_validation_slices": [],
+    "train_rows": 4973,
+    "validation_rows": 1493
+  }
+}

@@ -1,0 +1,106 @@
+{
+  "dataset_dir": "results\\multigail_dataset",
+  "output_dir": "Assets\\Models\\MultiGAIL",
+  "device": "cpu",
+  "styles": [
+    "aggressive",
+    "defensive"
+  ],
+  "critic_contract": {
+    "input_name": "state_action",
+    "output_name": "discriminator_score",
+    "raw_observation_size": 28,
+    "continuous_action_size": 2,
+    "discrete_one_hot_size": 9,
+    "critic_input_size": 39,
+    "style_conditioning_used_by_policy": true,
+    "style_conditioning_used_by_critic": false,
+    "loss_type": "weighted_lsgan_mse",
+    "target_scores": {
+      "positive": 1.0,
+      "negative": -1.0
+    },
+    "reward_transform": "max(0, 1 - 0.25 * (score - 1)^2)"
+  },
+  "validation_file_indices": [
+    2,
+    5
+  ],
+  "partial_validation_slices": [],
+  "outputs": {
+    "aggressive": {
+      "checkpoint": "Assets\\Models\\MultiGAIL\\aggressive\\aggressive_critic.pt",
+      "onnx": "Assets\\Models\\MultiGAIL\\aggressive\\aggressive_critic.onnx",
+      "metadata": "Assets\\Models\\MultiGAIL\\aggressive\\aggressive_critic_metadata.json",
+      "split": {
+        "train_files": [
+          "config\\SkeletonDemos\\SkeletonAggressi_5.demo",
+          "config\\SkeletonDemos\\SkeletonAggressi_7.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_0.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_2.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_3.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_4.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_5.demo"
+        ],
+        "validation_files": [
+          "config\\SkeletonDemos\\SkeletonAggressi_9.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_1.demo"
+        ],
+        "partial_validation_slices": [],
+        "train_rows": 4973,
+        "validation_rows": 1493
+      },
+      "metrics": {
+        "style": "aggressive",
+        "best_epoch": 2,
+        "train_loss": 4.0933764083935055e-05,
+        "validation_loss": 4.790778301192895e-05,
+        "train_accuracy": 0.9678262618137945,
+        "validation_accuracy": 0.9671801741460148,
+        "train_positive_score_mean": 0.7962639331817627,
+        "train_negative_score_mean": -0.6569541096687317,
+        "validation_positive_score_mean": 0.4978847801685333,
+        "validation_negative_score_mean": -0.9360417723655701,
+        "input_size": 39
+      }
+    },
+    "defensive": {
+      "checkpoint": "Assets\\Models\\MultiGAIL\\defensive\\defensive_critic.pt",
+      "onnx": "Assets\\Models\\MultiGAIL\\defensive\\defensive_critic.onnx",
+      "metadata": "Assets\\Models\\MultiGAIL\\defensive\\defensive_critic_metadata.json",
+      "split": {
+        "train_files": [
+          "config\\SkeletonDemos\\SkeletonAggressi_5.demo",
+          "config\\SkeletonDemos\\SkeletonAggressi_7.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_0.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_2.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_3.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_4.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_5.demo"
+        ],
+        "validation_files": [
+          "config\\SkeletonDemos\\SkeletonAggressi_9.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_1.demo"
+        ],
+        "partial_validation_slices": [],
+        "train_rows": 4973,
+        "validation_rows": 1493
+      },
+      "metrics": {
+        "style": "defensive",
+        "best_epoch": 2,
+        "train_loss": 3.993015984639931e-05,
+        "validation_loss": 5.159217229059634e-05,
+        "train_accuracy": 0.9656143173134929,
+        "validation_accuracy": 0.9611520428667113,
+        "train_positive_score_mean": 0.6407009363174438,
+        "train_negative_score_mean": -0.7909277677536011,
+        "validation_positive_score_mean": 0.8862932324409485,
+        "validation_negative_score_mean": -0.46252527832984924,
+        "input_size": 39
+      }
+    }
+  }
+}

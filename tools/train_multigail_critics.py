@@ -29,6 +29,7 @@ class FileRecord:
 class SplitSummary:
     train_files: List[str]
     validation_files: List[str]
+    partial_validation_slices: List[Dict[str, object]]
     train_rows: int
     validation_rows: int
 
@@ -46,6 +47,14 @@ class StyleMetrics:
     validation_positive_score_mean: float
     validation_negative_score_mean: float
     input_size: int
+
+
+@dataclass
+class ValidationSlice:
+    file_index: int
+    path: str
+    start_row_in_file: int
+    end_row_in_file: int
 
 
 class StyleCritic(nn.Module):
@@ -94,6 +103,12 @@ def parse_hidden_sizes(text: str) -> List[int]:
 
 def load_manifest(path: Path) -> Dict[str, object]:
     return json.loads(path.read_text())
+
+
+def require_keys(container: object, required_keys: Sequence[str], label: str) -> None:
+    missing = [key for key in required_keys if key not in container]
+    if missing:
+        raise ValueError(f"{label} is missing required keys: {missing}")
 
 
 def build_file_records(valid_files: Sequence[Dict[str, object]]) -> List[FileRecord]:
@@ -147,6 +162,43 @@ def choose_validation_file_indices(
     return sorted(set(selected))
 
 
+def choose_partial_validation_slices(
+    file_records: Sequence[FileRecord],
+    style_order: Sequence[str],
+    validation_file_indices: Sequence[int],
+    row_validation_fraction: float,
+) -> List[ValidationSlice]:
+    selected = set(validation_file_indices)
+    slices: List[ValidationSlice] = []
+
+    for style_name in style_order:
+        style_records = [record for record in file_records if record.style == style_name]
+        if not style_records:
+            continue
+        if any(record.index in selected for record in style_records):
+            continue
+
+        fallback_record = max(style_records, key=lambda record: record.step_count)
+        if fallback_record.step_count < 2:
+            raise ValueError(
+                f"Style '{style_name}' only has {fallback_record.step_count} row, "
+                "which is not enough to create both train and validation splits."
+            )
+
+        validation_rows = max(1, int(math.ceil(fallback_record.step_count * row_validation_fraction)))
+        validation_rows = min(validation_rows, fallback_record.step_count - 1)
+        slices.append(
+            ValidationSlice(
+                file_index=fallback_record.index,
+                path=fallback_record.path,
+                start_row_in_file=fallback_record.step_count - validation_rows,
+                end_row_in_file=fallback_record.step_count,
+            )
+        )
+
+    return slices
+
+
 def build_raw_state_action_inputs(dataset: Dict[str, np.ndarray]) -> np.ndarray:
     return np.concatenate(
         [
@@ -164,14 +216,116 @@ def build_style_targets(style_index: np.ndarray, positive_style_index: int) -> n
     return targets
 
 
-def build_row_mask(file_records: Sequence[FileRecord], selected_file_indices: Sequence[int]) -> np.ndarray:
+def build_row_mask(
+    file_records: Sequence[FileRecord],
+    selected_file_indices: Sequence[int],
+    partial_validation_slices: Sequence[ValidationSlice],
+) -> np.ndarray:
     total_rows = file_records[-1].end if file_records else 0
     mask = np.zeros(total_rows, dtype=bool)
     selected = set(selected_file_indices)
+    records_by_index = {record.index: record for record in file_records}
     for record in file_records:
         if record.index in selected:
             mask[record.start : record.end] = True
+    for item in partial_validation_slices:
+        record = records_by_index.get(item.file_index)
+        if record is None:
+            raise ValueError(f"Validation slice references unknown file index {item.file_index}.")
+        start = record.start + item.start_row_in_file
+        end = record.start + item.end_row_in_file
+        mask[start:end] = True
     return mask
+
+
+def validate_dataset_contract(manifest: Dict[str, object], dataset: Dict[str, np.ndarray]) -> None:
+    require_keys(
+        manifest,
+        [
+            "style_order",
+            "valid_files",
+            "total_steps",
+            "raw_observation_size",
+            "continuous_action_size",
+            "effective_discrete_branch_size",
+        ],
+        "manifest",
+    )
+    require_keys(
+        dataset,
+        [
+            "raw_observations",
+            "continuous_actions",
+            "discrete_one_hot",
+            "style_index",
+        ],
+        "dataset",
+    )
+
+    total_rows = int(dataset["style_index"].shape[0])
+    expected_rows = int(manifest["total_steps"])
+    if total_rows != expected_rows:
+        raise ValueError(
+            f"Dataset row count {total_rows} does not match manifest total_steps {expected_rows}."
+        )
+
+    row_aligned_keys = [
+        "raw_observations",
+        "continuous_actions",
+        "discrete_one_hot",
+        "style_index",
+        "file_index",
+        "row_in_file",
+        "critic_inputs",
+    ]
+    for key in row_aligned_keys:
+        if key not in dataset:
+            continue
+        if int(dataset[key].shape[0]) != total_rows:
+            raise ValueError(
+                f"Dataset field '{key}' has {dataset[key].shape[0]} rows, expected {total_rows}."
+            )
+
+    raw_width = int(dataset["raw_observations"].shape[1])
+    continuous_width = int(dataset["continuous_actions"].shape[1])
+    discrete_width = int(dataset["discrete_one_hot"].shape[1])
+
+    if raw_width != int(manifest["raw_observation_size"]):
+        raise ValueError(
+            f"Raw observation width {raw_width} does not match manifest value {manifest['raw_observation_size']}."
+        )
+    if continuous_width != int(manifest["continuous_action_size"]):
+        raise ValueError(
+            f"Continuous action width {continuous_width} does not match manifest value {manifest['continuous_action_size']}."
+        )
+    if discrete_width != int(manifest["effective_discrete_branch_size"]):
+        raise ValueError(
+            f"Discrete one-hot width {discrete_width} does not match manifest value {manifest['effective_discrete_branch_size']}."
+        )
+
+    style_order = [str(name) for name in manifest["style_order"]]
+    if total_rows > 0:
+        observed_style_min = int(np.min(dataset["style_index"]))
+        observed_style_max = int(np.max(dataset["style_index"]))
+        if observed_style_min < 0 or observed_style_max >= len(style_order):
+            raise ValueError(
+                f"Style indices must stay within [0, {len(style_order) - 1}], "
+                f"found range [{observed_style_min}, {observed_style_max}]."
+            )
+
+    if "critic_inputs" in dataset:
+        rebuilt_critic_inputs = build_raw_state_action_inputs(dataset)
+        exported_critic_inputs = dataset["critic_inputs"].astype(np.float32)
+        if rebuilt_critic_inputs.shape != exported_critic_inputs.shape:
+            raise ValueError(
+                "Exported critic_inputs shape does not match the reconstructed "
+                "raw_observations + continuous_actions + discrete_one_hot shape."
+            )
+        if not np.allclose(rebuilt_critic_inputs, exported_critic_inputs, atol=1e-5):
+            raise ValueError(
+                "Exported critic_inputs does not match the reconstructed "
+                "raw_observations + continuous_actions + discrete_one_hot contract."
+            )
 
 
 @torch.no_grad()
@@ -257,6 +411,7 @@ def train_one_style(
     style_index: np.ndarray,
     file_records: Sequence[FileRecord],
     validation_file_indices: Sequence[int],
+    partial_validation_slices: Sequence[ValidationSlice],
     output_dir: Path,
     hidden_sizes: Sequence[int],
     batch_size: int,
@@ -266,8 +421,13 @@ def train_one_style(
     weight_decay: float,
     seed: int,
     device: torch.device,
-) -> Tuple[StyleMetrics, SplitSummary, Path, Path]:
-    row_is_validation = build_row_mask(file_records, validation_file_indices)
+    critic_contract: Dict[str, object],
+) -> Tuple[StyleMetrics, SplitSummary, Path, Path, Path]:
+    row_is_validation = build_row_mask(
+        file_records,
+        validation_file_indices,
+        partial_validation_slices,
+    )
     train_mask = ~row_is_validation
     validation_mask = row_is_validation
 
@@ -419,9 +579,13 @@ def train_one_style(
 
     train_file_paths = [record.path for record in file_records if record.index not in set(validation_file_indices)]
     validation_file_paths = [record.path for record in file_records if record.index in set(validation_file_indices)]
+    for item in partial_validation_slices:
+        if item.path not in validation_file_paths:
+            validation_file_paths.append(item.path)
     split_summary = SplitSummary(
         train_files=train_file_paths,
         validation_files=validation_file_paths,
+        partial_validation_slices=[asdict(item) for item in partial_validation_slices],
         train_rows=int(train_inputs.shape[0]),
         validation_rows=int(validation_inputs.shape[0]),
     )
@@ -448,12 +612,13 @@ def train_one_style(
         "best_epoch": best_epoch,
         "loss_type": "weighted_lsgan_mse",
         "target_scores": {"positive": 1.0, "negative": -1.0},
+        "critic_contract": critic_contract,
         "train_metrics": asdict(metrics),
         "split": asdict(split_summary),
     }
     metadata_path.write_text(json.dumps(metadata, indent=2))
 
-    return metrics, split_summary, checkpoint_path, onnx_path
+    return metrics, split_summary, checkpoint_path, onnx_path, metadata_path
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -521,6 +686,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Prefer validation files with at least this many rows. Default: 128",
     )
     parser.add_argument(
+        "--row-validation-fraction",
+        type=float,
+        default=0.2,
+        help="Fallback validation fraction for styles that do not have a separate validation file. Default: 0.2",
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=7,
@@ -550,6 +721,9 @@ def main() -> int:
     parser = build_arg_parser()
     args = parser.parse_args()
 
+    if args.row_validation_fraction <= 0.0 or args.row_validation_fraction >= 1.0:
+        raise ValueError("--row-validation-fraction must be greater than 0 and less than 1.")
+
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -561,6 +735,7 @@ def main() -> int:
     dataset_path = args.dataset_dir / "skeleton_multigail_dataset.npz"
     manifest = load_manifest(manifest_path)
     dataset = np.load(dataset_path)
+    validate_dataset_contract(manifest, dataset)
 
     file_records = build_file_records(manifest["valid_files"])
     style_order = [str(name) for name in manifest["style_order"]]
@@ -571,9 +746,28 @@ def main() -> int:
         min_validation_rows=args.min_validation_rows,
         seed=args.seed,
     )
+    partial_validation_slices = choose_partial_validation_slices(
+        file_records=file_records,
+        style_order=style_order,
+        validation_file_indices=validation_file_indices,
+        row_validation_fraction=args.row_validation_fraction,
+    )
 
     raw_state_action_inputs = build_raw_state_action_inputs(dataset)
     style_index = dataset["style_index"].astype(np.int64)
+    critic_contract = {
+        "input_name": "state_action",
+        "output_name": "discriminator_score",
+        "raw_observation_size": int(manifest["raw_observation_size"]),
+        "continuous_action_size": int(manifest["continuous_action_size"]),
+        "discrete_one_hot_size": int(manifest["effective_discrete_branch_size"]),
+        "critic_input_size": int(raw_state_action_inputs.shape[1]),
+        "style_conditioning_used_by_policy": bool(manifest.get("append_style_conditioning", False)),
+        "style_conditioning_used_by_critic": False,
+        "loss_type": "weighted_lsgan_mse",
+        "target_scores": {"positive": 1.0, "negative": -1.0},
+        "reward_transform": "max(0, 1 - 0.25 * (score - 1)^2)",
+    }
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -581,13 +775,14 @@ def main() -> int:
     per_style_outputs: Dict[str, Dict[str, object]] = {}
 
     for positive_style_index, style_name in enumerate(style_order):
-        metrics, split_summary, checkpoint_path, onnx_path = train_one_style(
+        metrics, split_summary, checkpoint_path, onnx_path, metadata_path = train_one_style(
             style_name=style_name,
             positive_style_index=positive_style_index,
             inputs=raw_state_action_inputs,
             style_index=style_index,
             file_records=file_records,
             validation_file_indices=validation_file_indices,
+            partial_validation_slices=partial_validation_slices,
             output_dir=args.output_dir,
             hidden_sizes=hidden_sizes,
             batch_size=args.batch_size,
@@ -597,11 +792,13 @@ def main() -> int:
             weight_decay=args.weight_decay,
             seed=args.seed,
             device=device,
+            critic_contract=critic_contract,
         )
         all_metrics.append(metrics)
         per_style_outputs[style_name] = {
             "checkpoint": str(checkpoint_path),
             "onnx": str(onnx_path),
+            "metadata": str(metadata_path),
             "split": asdict(split_summary),
             "metrics": asdict(metrics),
         }
@@ -611,14 +808,9 @@ def main() -> int:
         "output_dir": str(args.output_dir),
         "device": str(device),
         "styles": style_order,
-        "input_contract": {
-            "raw_observation_size": int(manifest["raw_observation_size"]),
-            "continuous_action_size": int(manifest["continuous_action_size"]),
-            "discrete_one_hot_size": int(manifest["effective_discrete_branch_size"]),
-            "critic_input_size": int(raw_state_action_inputs.shape[1]),
-            "uses_style_conditioning_in_critic": False,
-        },
+        "critic_contract": critic_contract,
         "validation_file_indices": validation_file_indices,
+        "partial_validation_slices": [asdict(item) for item in partial_validation_slices],
         "outputs": per_style_outputs,
     }
     summary_path = args.output_dir / "training_summary.json"
@@ -630,6 +822,8 @@ def main() -> int:
     print(f"  device: {device}")
     print(f"  critic input size: {raw_state_action_inputs.shape[1]}")
     print(f"  validation files: {validation_file_indices}")
+    if partial_validation_slices:
+        print(f"  partial validation slices: {[asdict(item) for item in partial_validation_slices]}")
     for metrics in all_metrics:
         print(
             f"  [{metrics.style}] epoch={metrics.best_epoch} "

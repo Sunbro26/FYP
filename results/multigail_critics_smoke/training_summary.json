@@ -1,0 +1,106 @@
+{
+  "dataset_dir": "results\\multigail_dataset",
+  "output_dir": "results\\multigail_critics_smoke",
+  "device": "cpu",
+  "styles": [
+    "aggressive",
+    "defensive"
+  ],
+  "critic_contract": {
+    "input_name": "state_action",
+    "output_name": "discriminator_score",
+    "raw_observation_size": 28,
+    "continuous_action_size": 2,
+    "discrete_one_hot_size": 9,
+    "critic_input_size": 39,
+    "style_conditioning_used_by_policy": true,
+    "style_conditioning_used_by_critic": false,
+    "loss_type": "weighted_lsgan_mse",
+    "target_scores": {
+      "positive": 1.0,
+      "negative": -1.0
+    },
+    "reward_transform": "max(0, 1 - 0.25 * (score - 1)^2)"
+  },
+  "validation_file_indices": [
+    2,
+    5
+  ],
+  "partial_validation_slices": [],
+  "outputs": {
+    "aggressive": {
+      "checkpoint": "results\\multigail_critics_smoke\\aggressive\\aggressive_critic.pt",
+      "onnx": "results\\multigail_critics_smoke\\aggressive\\aggressive_critic.onnx",
+      "metadata": "results\\multigail_critics_smoke\\aggressive\\aggressive_critic_metadata.json",
+      "split": {
+        "train_files": [
+          "config\\SkeletonDemos\\SkeletonAggressi_5.demo",
+          "config\\SkeletonDemos\\SkeletonAggressi_7.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_0.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_2.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_3.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_4.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_5.demo"
+        ],
+        "validation_files": [
+          "config\\SkeletonDemos\\SkeletonAggressi_9.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_1.demo"
+        ],
+        "partial_validation_slices": [],
+        "train_rows": 4973,
+        "validation_rows": 1493
+      },
+      "metrics": {
+        "style": "aggressive",
+        "best_epoch": 1,
+        "train_loss": 4.3984733059729934e-05,
+        "validation_loss": 5.1745260701189674e-05,
+        "train_accuracy": 0.9648099738588377,
+        "validation_accuracy": 0.9584728734092431,
+        "train_positive_score_mean": 0.7398388385772705,
+        "train_negative_score_mean": -0.6550542712211609,
+        "validation_positive_score_mean": 0.47447583079338074,
+        "validation_negative_score_mean": -0.9279904365539551,
+        "input_size": 39
+      }
+    },
+    "defensive": {
+      "checkpoint": "results\\multigail_critics_smoke\\defensive\\defensive_critic.pt",
+      "onnx": "results\\multigail_critics_smoke\\defensive\\defensive_critic.onnx",
+      "metadata": "results\\multigail_critics_smoke\\defensive\\defensive_critic_metadata.json",
+      "split": {
+        "train_files": [
+          "config\\SkeletonDemos\\SkeletonAggressi_5.demo",
+          "config\\SkeletonDemos\\SkeletonAggressi_7.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_0.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_2.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_3.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_4.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_5.demo"
+        ],
+        "validation_files": [
+          "config\\SkeletonDemos\\SkeletonAggressi_9.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_1.demo"
+        ],
+        "partial_validation_slices": [],
+        "train_rows": 4973,
+        "validation_rows": 1493
+      },
+      "metrics": {
+        "style": "defensive",
+        "best_epoch": 1,
+        "train_loss": 4.076960443739995e-05,
+        "validation_loss": 5.545476400470533e-05,
+        "train_accuracy": 0.97023929217776,
+        "validation_accuracy": 0.9511051574012056,
+        "train_positive_score_mean": 0.6714773178100586,
+        "train_negative_score_mean": -0.7513258457183838,
+        "validation_positive_score_mean": 0.9423617124557495,
+        "validation_negative_score_mean": -0.45419272780418396,
+        "input_size": 39
+      }
+    }
+  }
+}
