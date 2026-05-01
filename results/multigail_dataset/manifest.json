@@ -1,0 +1,229 @@
+{
+  "style_order": [
+    "aggressive",
+    "defensive"
+  ],
+  "valid_files": [
+    {
+      "path": "config\\SkeletonDemos\\SkeletonAggressi_5.demo",
+      "style": "aggressive",
+      "size_bytes": 231595,
+      "step_count": 1378,
+      "raw_observation_size": 28,
+      "conditioned_observation_size": 30,
+      "continuous_action_size": 2,
+      "declared_discrete_branch_size": 4,
+      "effective_discrete_branch_size": 9,
+      "max_raw_discrete_action": 9
+    },
+    {
+      "path": "config\\SkeletonDemos\\SkeletonAggressi_7.demo",
+      "style": "aggressive",
+      "size_bytes": 123235,
+      "step_count": 733,
+      "raw_observation_size": 28,
+      "conditioned_observation_size": 30,
+      "continuous_action_size": 2,
+      "declared_discrete_branch_size": 4,
+      "effective_discrete_branch_size": 9,
+      "max_raw_discrete_action": 9
+    },
+    {
+      "path": "config\\SkeletonDemos\\SkeletonAggressi_9.demo",
+      "style": "aggressive",
+      "size_bytes": 132811,
+      "step_count": 790,
+      "raw_observation_size": 28,
+      "conditioned_observation_size": 30,
+      "continuous_action_size": 2,
+      "declared_discrete_branch_size": 4,
+      "effective_discrete_branch_size": 9,
+      "max_raw_discrete_action": 9
+    },
+    {
+      "path": "config\\SkeletonDemos\\SkeletonDefensiv.demo",
+      "style": "defensive",
+      "size_bytes": 5802,
+      "step_count": 34,
+      "raw_observation_size": 28,
+      "conditioned_observation_size": 30,
+      "continuous_action_size": 2,
+      "declared_discrete_branch_size": 4,
+      "effective_discrete_branch_size": 9,
+      "max_raw_discrete_action": 7
+    },
+    {
+      "path": "config\\SkeletonDemos\\SkeletonDefensiv_0.demo",
+      "style": "defensive",
+      "size_bytes": 89442,
+      "step_count": 532,
+      "raw_observation_size": 28,
+      "conditioned_observation_size": 30,
+      "continuous_action_size": 2,
+      "declared_discrete_branch_size": 4,
+      "effective_discrete_branch_size": 9,
+      "max_raw_discrete_action": 9
+    },
+    {
+      "path": "config\\SkeletonDemos\\SkeletonDefensiv_1.demo",
+      "style": "defensive",
+      "size_bytes": 118195,
+      "step_count": 703,
+      "raw_observation_size": 28,
+      "conditioned_observation_size": 30,
+      "continuous_action_size": 2,
+      "declared_discrete_branch_size": 4,
+      "effective_discrete_branch_size": 9,
+      "max_raw_discrete_action": 9
+    },
+    {
+      "path": "config\\SkeletonDemos\\SkeletonDefensiv_2.demo",
+      "style": "defensive",
+      "size_bytes": 45955,
+      "step_count": 273,
+      "raw_observation_size": 28,
+      "conditioned_observation_size": 30,
+      "continuous_action_size": 2,
+      "declared_discrete_branch_size": 4,
+      "effective_discrete_branch_size": 9,
+      "max_raw_discrete_action": 9
+    },
+    {
+      "path": "config\\SkeletonDemos\\SkeletonDefensiv_3.demo",
+      "style": "defensive",
+      "size_bytes": 66955,
+      "step_count": 398,
+      "raw_observation_size": 28,
+      "conditioned_observation_size": 30,
+      "continuous_action_size": 2,
+      "declared_discrete_branch_size": 4,
+      "effective_discrete_branch_size": 9,
+      "max_raw_discrete_action": 9
+    },
+    {
+      "path": "config\\SkeletonDemos\\SkeletonDefensiv_4.demo",
+      "style": "defensive",
+      "size_bytes": 189931,
+      "step_count": 1130,
+      "raw_observation_size": 28,
+      "conditioned_observation_size": 30,
+      "continuous_action_size": 2,
+      "declared_discrete_branch_size": 4,
+      "effective_discrete_branch_size": 9,
+      "max_raw_discrete_action": 9
+    },
+    {
+      "path": "config\\SkeletonDemos\\SkeletonDefensiv_5.demo",
+      "style": "defensive",
+      "size_bytes": 83251,
+      "step_count": 495,
+      "raw_observation_size": 28,
+      "conditioned_observation_size": 30,
+      "continuous_action_size": 2,
+      "declared_discrete_branch_size": 4,
+      "effective_discrete_branch_size": 9,
+      "max_raw_discrete_action": 9
+    }
+  ],
+  "skipped_files": [
+    {
+      "path": "config\\SkeletonDemos\\SkeletonAggressi_6.demo",
+      "reason": "File too small (88 bytes)."
+    },
+    {
+      "path": "config\\SkeletonDemos\\SkeletonAggressi_8.demo",
+      "reason": "File too small (88 bytes)."
+    },
+    {
+      "path": "config\\SkeletonDemos\\SkeletonAggressi.demo",
+      "reason": "Raw observation size did not match the chosen dataset schema. Expected 28, found 20."
+    },
+    {
+      "path": "config\\SkeletonDemos\\SkeletonAggressi_0.demo",
+      "reason": "Raw observation size did not match the chosen dataset schema. Expected 28, found 20."
+    },
+    {
+      "path": "config\\SkeletonDemos\\SkeletonAggressi_1.demo",
+      "reason": "Raw observation size did not match the chosen dataset schema. Expected 28, found 20."
+    },
+    {
+      "path": "config\\SkeletonDemos\\SkeletonAggressi_2.demo",
+      "reason": "Raw observation size did not match the chosen dataset schema. Expected 28, found 20."
+    },
+    {
+      "path": "config\\SkeletonDemos\\SkeletonAggressi_3.demo",
+      "reason": "Raw observation size did not match the chosen dataset schema. Expected 28, found 20."
+    },
+    {
+      "path": "config\\SkeletonDemos\\SkeletonAggressi_4.demo",
+      "reason": "Raw observation size did not match the chosen dataset schema. Expected 28, found 20."
+    }
+  ],
+  "total_steps": 6466,
+  "raw_observation_size": 28,
+  "conditioned_observation_size": 30,
+  "continuous_action_size": 2,
+  "effective_discrete_branch_size": 9,
+  "critic_input_size": 41,
+  "style_file_counts": {
+    "aggressive": 3,
+    "defensive": 7
+  },
+  "style_step_counts": {
+    "aggressive": 2901,
+    "defensive": 3565
+  },
+  "available_raw_observation_sizes": [
+    20,
+    28
+  ],
+  "schema_report": {
+    "20": {
+      "total_files": 6,
+      "total_steps": 3209,
+      "styles": {
+        "aggressive": {
+          "files": 6,
+          "steps": 3209
+        },
+        "defensive": {
+          "files": 0,
+          "steps": 0
+        }
+      },
+      "covered_styles": [
+        "aggressive"
+      ]
+    },
+    "28": {
+      "total_files": 10,
+      "total_steps": 6466,
+      "styles": {
+        "aggressive": {
+          "files": 3,
+          "steps": 2901
+        },
+        "defensive": {
+          "files": 7,
+          "steps": 3565
+        }
+      },
+      "covered_styles": [
+        "aggressive",
+        "defensive"
+      ]
+    }
+  },
+  "append_style_conditioning": true,
+  "chosen_raw_observation_size": 28,
+  "discrete_remap": {
+    "9": 0
+  },
+  "output_files": {
+    "combined": "results\\multigail_dataset\\skeleton_multigail_dataset.npz",
+    "per_style": {
+      "aggressive": "results\\multigail_dataset\\aggressive_dataset.npz",
+      "defensive": "results\\multigail_dataset\\defensive_dataset.npz"
+    }
+  }
+}

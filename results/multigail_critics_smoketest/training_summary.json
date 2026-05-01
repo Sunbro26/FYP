@@ -1,0 +1,92 @@
+{
+  "dataset_dir": "results\\multigail_dataset",
+  "output_dir": "results\\multigail_critics_smoketest",
+  "device": "cpu",
+  "styles": [
+    "aggressive",
+    "defensive"
+  ],
+  "input_contract": {
+    "raw_observation_size": 28,
+    "continuous_action_size": 2,
+    "discrete_one_hot_size": 9,
+    "critic_input_size": 39,
+    "uses_style_conditioning_in_critic": false
+  },
+  "validation_file_indices": [
+    2,
+    5
+  ],
+  "outputs": {
+    "aggressive": {
+      "checkpoint": "results\\multigail_critics_smoketest\\aggressive\\aggressive_critic.pt",
+      "onnx": "results\\multigail_critics_smoketest\\aggressive\\aggressive_critic.onnx",
+      "split": {
+        "train_files": [
+          "config\\SkeletonDemos\\SkeletonAggressi_5.demo",
+          "config\\SkeletonDemos\\SkeletonAggressi_7.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_0.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_2.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_3.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_4.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_5.demo"
+        ],
+        "validation_files": [
+          "config\\SkeletonDemos\\SkeletonAggressi_9.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_1.demo"
+        ],
+        "train_rows": 4973,
+        "validation_rows": 1493
+      },
+      "metrics": {
+        "style": "aggressive",
+        "best_epoch": 3,
+        "train_loss": 5.500215257019559e-05,
+        "validation_loss": 5.3992306161212804e-05,
+        "train_accuracy": 0.9499296199477176,
+        "validation_accuracy": 0.9685197588747488,
+        "train_positive_score_mean": 0.7007150053977966,
+        "train_negative_score_mean": -0.5260449051856995,
+        "validation_positive_score_mean": 0.47596457600593567,
+        "validation_negative_score_mean": -0.7613481283187866,
+        "input_size": 39
+      }
+    },
+    "defensive": {
+      "checkpoint": "results\\multigail_critics_smoketest\\defensive\\defensive_critic.pt",
+      "onnx": "results\\multigail_critics_smoketest\\defensive\\defensive_critic.onnx",
+      "split": {
+        "train_files": [
+          "config\\SkeletonDemos\\SkeletonAggressi_5.demo",
+          "config\\SkeletonDemos\\SkeletonAggressi_7.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_0.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_2.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_3.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_4.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_5.demo"
+        ],
+        "validation_files": [
+          "config\\SkeletonDemos\\SkeletonAggressi_9.demo",
+          "config\\SkeletonDemos\\SkeletonDefensiv_1.demo"
+        ],
+        "train_rows": 4973,
+        "validation_rows": 1493
+      },
+      "metrics": {
+        "style": "defensive",
+        "best_epoch": 3,
+        "train_loss": 4.8037059090698386e-05,
+        "validation_loss": 4.389848526484953e-05,
+        "train_accuracy": 0.9617936859038809,
+        "validation_accuracy": 0.9758874748827864,
+        "train_positive_score_mean": 0.5749720931053162,
+        "train_negative_score_mean": -0.7257272601127625,
+        "validation_positive_score_mean": 0.8996186256408691,
+        "validation_negative_score_mean": -0.5272085666656494,
+        "input_size": 39
+      }
+    }
+  }
+}

@@ -6,34 +6,69 @@ using System.Collections;
 public class GameManager : MonoBehaviour
 {
     [Header("UI References")]
-    public GameObject deathScreenPanel; // The panel with "YOU DIED" or "VICTORY"
-    public TMP_Text resultText;         // The text component to change message
+    public GameObject deathScreenPanel;
+    public TMP_Text resultText;
 
     [Header("Settings")]
     public float restartDelay = 3.0f;
 
-    // Singleton instance for easy access
     public static GameManager Instance;
+
+    private Coroutine _gameOverRoutine;
+    private bool _isResetting;
+    private bool _suppressGameOverFlow;
+
+    public bool IsResetting => _isResetting;
 
     void Awake()
     {
         if (Instance == null) Instance = this;
         else Destroy(gameObject);
-        
+
+        Time.timeScale = 1.0f;
+        _isResetting = false;
+        _suppressGameOverFlow = false;
+
+        if (deathScreenPanel != null) deathScreenPanel.SetActive(false);
+    }
+
+    public void SetTrainingResetOverride(bool suppress)
+    {
+        _suppressGameOverFlow = suppress;
+
+        if (!suppress)
+        {
+            return;
+        }
+
+        if (_gameOverRoutine != null)
+        {
+            StopCoroutine(_gameOverRoutine);
+            _gameOverRoutine = null;
+        }
+
+        Time.timeScale = 1.0f;
+        _isResetting = false;
         if (deathScreenPanel != null) deathScreenPanel.SetActive(false);
     }
 
     public void TriggerGameOver(bool playerWon)
     {
-        StartCoroutine(GameOverSequence(playerWon));
+        if (_suppressGameOverFlow || _isResetting) return;
+
+        if (_gameOverRoutine != null)
+        {
+            StopCoroutine(_gameOverRoutine);
+        }
+
+        _gameOverRoutine = StartCoroutine(GameOverSequence(playerWon));
     }
 
     private IEnumerator GameOverSequence(bool playerWon)
     {
-        // 1. Slow down time for dramatic effect
+        _isResetting = true;
         Time.timeScale = 0.5f;
-        
-        // 2. Show UI
+
         if (deathScreenPanel != null)
         {
             deathScreenPanel.SetActive(true);
@@ -44,10 +79,20 @@ public class GameManager : MonoBehaviour
             }
         }
 
-        // 3. Wait (Realtime, ignoring timeScale)
-        yield return new WaitForSeconds(restartDelay);
+        yield return new WaitForSecondsRealtime(restartDelay);
 
-        // 4. Reset Game State (Simulation Mode)
+        ResetSimulation();
+        _gameOverRoutine = null;
+    }
+
+    public void ResetSimulationImmediate()
+    {
+        if (_gameOverRoutine != null)
+        {
+            StopCoroutine(_gameOverRoutine);
+            _gameOverRoutine = null;
+        }
+
         ResetSimulation();
     }
 
@@ -56,14 +101,22 @@ public class GameManager : MonoBehaviour
         Time.timeScale = 1.0f;
         if (deathScreenPanel != null) deathScreenPanel.SetActive(false);
 
-        // Find all CharacterStats and reset them
         CharacterStats[] allStats = FindObjectsByType<CharacterStats>(FindObjectsSortMode.None);
         foreach (var stat in allStats)
         {
             stat.ResetStats();
         }
-        
-        // Optional: Reset positions here if you want spawn points
-        // ResetPositions(); 
+
+        _isResetting = false;
+    }
+
+    void OnDestroy()
+    {
+        if (Instance == this)
+        {
+            Instance = null;
+        }
+
+        Time.timeScale = 1.0f;
     }
 }

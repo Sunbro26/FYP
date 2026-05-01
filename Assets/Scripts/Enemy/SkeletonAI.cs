@@ -87,6 +87,7 @@ public class SkeletonAI : MonoBehaviour
     private EnemyAttack _currentExecutingAttack; 
     
     private float _decisionTimer;
+    private int _skippedAttackWindows = 0;
     private bool _isActionLocked = false;
     private int _retreatType = 0; 
     private float _strafeDirection = 1f;
@@ -160,36 +161,45 @@ public class SkeletonAI : MonoBehaviour
     // --- HEURISTIC DECISION LOGIC (ML Branch) ---
     void RunHeuristicDecisionLogic()
     {
-        float adjustedFrequency = currentPersona.decisionFrequency * (1.1f - currentPersona.aggression);
-        
-        if (_decisionTimer > adjustedFrequency)
+        float adjustedFrequency = currentPersona.decisionFrequency * Mathf.Lerp(1.1f, 0.65f, currentPersona.aggression);
+        if (_decisionTimer <= adjustedFrequency)
         {
-            float dist = Vector3.Distance(transform.position, _target.position);
-            
-            // --- THE FIX: AGGRESSION GATE ---
-            // If aggression is 0.2, 80% of the time the AI will skip its attack window
-            // and just keep circling or choose to retreat instead.
-            if (Random.value > currentPersona.aggression)
-            {
-                Debug.Log("AI: Too cautious to attack. Continuing to Strategize.");
-                _decisionTimer = 0; // Reset timer to wait again
-                
-                // If fear is high, force a retreat instead of just standing there
-                if (Random.value < currentPersona.fear) SwitchState(AIState.Retreating);
-                return; 
-            }
-            // 2. Smart Choice (Utility System)
-            EnemyAttack bestMove = ChooseSmartAttack();
-            
-            if (bestMove != null)
-            {
-                _plannedAttack = bestMove;
-                SwitchState(AIState.Maneuvering);
-            }
-            else
-            {
-                SwitchState(AIState.Retreating);
-            }
+            return;
+        }
+
+        float dist = Vector3.Distance(transform.position, _target.position);
+        EnemyAttack bestMove = ChooseSmartAttack();
+
+        if (bestMove == null)
+        {
+            _skippedAttackWindows = 0;
+            SwitchState(AIState.Retreating);
+            return;
+        }
+
+        float rangeWindow = bestMove.rangeTolerance + 1.0f;
+        float rangeScore = 1f - Mathf.Clamp01(Mathf.Abs(dist - bestMove.optimalRange) / Mathf.Max(0.1f, rangeWindow));
+        float commitScore = currentPersona.aggression;
+        commitScore += rangeScore * 0.35f;
+        commitScore += Mathf.Min(_skippedAttackWindows, 3) * 0.2f;
+        commitScore -= currentPersona.fear * (dist < bestMove.optimalRange ? 0.2f : 0.1f);
+
+        bool forcedCommit = _skippedAttackWindows >= 2;
+        if (forcedCommit || commitScore >= 0.5f)
+        {
+            _plannedAttack = bestMove;
+            _skippedAttackWindows = 0;
+            SwitchState(AIState.Maneuvering);
+            return;
+        }
+
+        _skippedAttackWindows++;
+        _decisionTimer = 0f;
+
+        bool shouldRetreat = currentPersona.fear > 0.6f && dist < currentPersona.preferredCombatRange;
+        if (shouldRetreat)
+        {
+            SwitchState(AIState.Retreating);
         }
     }
 
@@ -317,98 +327,126 @@ public class SkeletonAI : MonoBehaviour
     }
 
     // --- ATTACK EXECUTION (Merged from MultipleAttacks Branch) ---
+    IEnumerator WaitWithAttackTimer(float duration, bool trackTarget = false)
+    {
+        float elapsed = 0f;
+        while (elapsed < duration)
+        {
+            if (trackTarget)
+            {
+                FaceTarget();
+            }
+
+            elapsed += Time.deltaTime;
+            _attackTimer += Time.deltaTime;
+            yield return null;
+        }
+    }
+
+    // --- ATTACK EXECUTION (Merged from MultipleAttacks Branch) ---
     IEnumerator ExecuteAttackRoutine()
     {
         _isActionLocked = true;
         _agent.isStopped = true;
         SwitchState(AIState.Attacking);
-        
+
         _currentExecutingAttack = _plannedAttack ?? availableAttacks[0];
         _currentExecutingAttack.lastTimeUsed = Time.time;
-        
+        _attackTimer = 0f;
+
         OnEnemyAttackAttempt?.Invoke(_currentExecutingAttack.name);
 
         _animator.SetInteger(AttackIndex, _currentExecutingAttack.animationIndex);
         _animator.SetTrigger(TriggerAttack);
 
-        // --- COMBO ATTACK LOGIC ---
         if (_currentExecutingAttack.name == "Combo Attack")
         {
-            // Hit 1
-            float windup1 = 0.7f; float duration1 = 0.85f;
-            float windup2 = 0.1f; float duration2 = 0.85f;
-            float windup3 = 0.1f; float duration3 = 0.85f;
+            float windup1 = 0.7f;
+            float duration1 = 0.85f;
+            float windup2 = 0.1f;
+            float duration2 = 0.85f;
+            float windup3 = 0.1f;
+            float duration3 = 0.85f;
 
-            _attackTimer = 0f;
-            while (_attackTimer < windup1) 
-            {
-                FaceTarget(); 
-               _attackTimer += Time.deltaTime;
-                yield return null;
-            }
-            canDealDamage = true; yield return new WaitForSeconds(duration1); canDealDamage = false;
-            yield return new WaitForSeconds(windup2); 
-            canDealDamage = true; yield return new WaitForSeconds(duration2); canDealDamage = false;
-            yield return new WaitForSeconds(windup3); 
-            canDealDamage = true; yield return new WaitForSeconds(duration3); canDealDamage = false;
+            yield return StartCoroutine(WaitWithAttackTimer(windup1, true));
+            canDealDamage = true;
+            yield return StartCoroutine(WaitWithAttackTimer(duration1));
+            canDealDamage = false;
+
+            yield return StartCoroutine(WaitWithAttackTimer(windup2));
+            canDealDamage = true;
+            yield return StartCoroutine(WaitWithAttackTimer(duration2));
+            canDealDamage = false;
+
+            yield return StartCoroutine(WaitWithAttackTimer(windup3));
+            canDealDamage = true;
+            yield return StartCoroutine(WaitWithAttackTimer(duration3));
+            canDealDamage = false;
 
             float timeSpent = windup1 + duration1 + windup2 + duration2 + windup3 + duration3;
             float remaining = _currentExecutingAttack.totalDuration - timeSpent;
-            if (remaining > 0) yield return new WaitForSeconds(remaining);
+            if (remaining > 0f)
+            {
+                yield return StartCoroutine(WaitWithAttackTimer(remaining));
+            }
         }
-        else 
+        else
         {
-            // --- STANDARD ATTACK LOGIC ---
             float currentWindUp = _currentExecutingAttack.windUpTime;
             float currentDamageWindow = _currentExecutingAttack.damageDuration;
             float currentTotalDuration = _currentExecutingAttack.totalDuration;
 
-            _attackTimer = 0f;
-            while (_attackTimer < currentWindUp) 
-            {
-                if (_currentExecutingAttack.tracksPlayerDuringWindup) FaceTarget();
-               _attackTimer += Time.deltaTime;
-                yield return null;
-            }
-
+            yield return StartCoroutine(WaitWithAttackTimer(currentWindUp, _currentExecutingAttack.tracksPlayerDuringWindup));
             canDealDamage = true;
-            yield return new WaitForSeconds(currentDamageWindow);
+            yield return StartCoroutine(WaitWithAttackTimer(currentDamageWindow));
             canDealDamage = false;
 
             float remaining = currentTotalDuration - currentWindUp - currentDamageWindow;
-            if (remaining > 0) yield return new WaitForSeconds(remaining);
+            if (remaining > 0f)
+            {
+                yield return StartCoroutine(WaitWithAttackTimer(remaining));
+            }
         }
 
         float retreatChance = (1.0f - currentPersona.aggression) + currentPersona.fear;
-        
-        if (Random.value < retreatChance) 
+        if (Random.value < retreatChance)
         {
             SwitchState(AIState.Retreating);
         }
-        else 
+        else
         {
             SwitchState(AIState.Strategizing);
-            // Soft-reset_attackTimer so an aggressive AI can chain attacks faster
-            _decisionTimer = currentPersona.decisionFrequency * 0.5f; 
+            _decisionTimer = currentPersona.decisionFrequency * 0.5f;
         }
 
-        _plannedAttack = null; 
+        _plannedAttack = null;
+        _currentExecutingAttack = null;
+        _attackTimer = 0f;
         _isActionLocked = false;
     }
 
-        public float GetAttackProgress()
+    public float GetAttackProgress()
     {
-        if (_currentExecutingAttack == null || _currentExecutingAttack.totalDuration == 0) return 0f;
-        return _attackTimer / _currentExecutingAttack.totalDuration;
+        if (_currentExecutingAttack == null || _currentExecutingAttack.totalDuration <= 0f)
+        {
+            return 0f;
+        }
+
+        return Mathf.Clamp01(_attackTimer / _currentExecutingAttack.totalDuration);
     }
+
+    public float GetAttackElapsedTime() => _attackTimer;
 
     // --- PARRY LOGIC ---
     public void GetParried()
     {
-        StopAllCoroutines(); 
+        StopAllCoroutines();
         _isActionLocked = true;
         _agent.isStopped = true;
-        canDealDamage = false; 
+        canDealDamage = false;
+        _attackTimer = 0f;
+        _currentExecutingAttack = null;
+        _plannedAttack = null; 
         SwitchState(AIState.Stunned); 
         OnParrySuccess?.Invoke();
         StartCoroutine(ParryReboundRoutine());
@@ -437,9 +475,13 @@ public class SkeletonAI : MonoBehaviour
 
         if (_isActionLocked) return;
 
-        StopAllCoroutines(); 
+        StopAllCoroutines();
         _agent.isStopped = true;
-        _isActionLocked = true; 
+        _isActionLocked = true;
+        canDealDamage = false;
+        _attackTimer = 0f;
+        _currentExecutingAttack = null;
+        _plannedAttack = null; 
 
         _animator.SetTrigger(HitTrigger);
         StartCoroutine(RecoverFromHit());
@@ -459,7 +501,7 @@ public class SkeletonAI : MonoBehaviour
     // --- PROXY METHODS (From ML Branch) ---
     public void SetMovementInput(float strafe, float forward)
     {
-        if (_isActionLocked || currentState == AIState.Stunned) return;
+        if ((_myStats != null && _myStats.IsDead) || _isActionLocked || currentState == AIState.Stunned) return;
 
         _smoothInputVector = Vector2.Lerp(_smoothInputVector, new Vector2(strafe, forward), Time.deltaTime * 10f);
         UpdateAnim(_smoothInputVector.x, _smoothInputVector.y);
@@ -472,7 +514,7 @@ public class SkeletonAI : MonoBehaviour
 
     public void RequestAttack(int attackIndex)
     {
-        if (_isActionLocked || currentState == AIState.Stunned) return;
+        if ((_myStats != null && _myStats.IsDead) || _isActionLocked || currentState == AIState.Stunned) return;
 
         if (attackIndex >= 0 && attackIndex < availableAttacks.Count)
         {
@@ -488,7 +530,7 @@ public class SkeletonAI : MonoBehaviour
     public EnemyAttack GetCurrentAttack() => _currentExecutingAttack;
     public float GetCurrentStrafe() => _animator.GetFloat(MoveX);
     public float GetCurrentForward() => _animator.GetFloat(MoveZ);
-    public bool IsAttacking() => _isActionLocked;
+    public bool IsAttacking() => currentState == AIState.Attacking;
 
     void SwitchState(AIState newState) {
          if (currentState != newState) {
@@ -558,12 +600,13 @@ public class SkeletonAI : MonoBehaviour
         canDealDamage = false;
         _currentExecutingAttack = null;
         _plannedAttack = null;
-        _decisionTimer = 0;
-        
-        // Reset Visuals
+        _attackTimer = 0f;
+        _decisionTimer = 0f;
+        _skippedAttackWindows = 0;
+        _smoothInputVector = Vector2.zero;
+
+        UpdateAnim(0f, 0f);
         UpdateDebugVisuals();
-        
-        // Reset State
         SwitchState(AIState.Idle);
     }
 }

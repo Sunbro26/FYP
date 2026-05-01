@@ -2,38 +2,50 @@ using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 using System;
-using UnityEngine.AI; 
+using UnityEngine.AI;
 
 public class CharacterStats : MonoBehaviour
 {
     [Header("Identity")]
-    public bool isPlayer = false; 
+    public bool isPlayer = false;
 
     [Header("Health Settings")]
     public int maxHealth = 100;
     public int currentHealth;
     public Slider healthSlider;
-    public TMP_Text healthText; 
+    public TMP_Text healthText;
 
     [Header("Stamina Settings")]
     public float maxStamina = 100f;
     public float currentStamina;
     public float staminaRegenRate = 15f;
-    public float staminaRegenDelay = 1.0f; 
-    public float exhaustionDelay = 2.5f; 
-    public Slider staminaSlider; 
+    public float staminaRegenDelay = 1.0f;
+    public float exhaustionDelay = 2.5f;
+    public Slider staminaSlider;
 
     private float _regenStartTime;
     private bool _isDead = false;
     private Animator _animator;
-    private NavMeshAgent _agent; 
-    private Collider _collider;  
-    
+    private NavMeshAgent _agent;
+    private Collider _collider;
+
     private Vector3 _startPosition;
     private Quaternion _startRotation;
 
     public bool IsDead => _isDead;
+    public bool IsStaminaRegenLocked => Time.time < _regenStartTime;
+    public float StaminaRegenLockRemaining => Mathf.Max(0f, _regenStartTime - Time.time);
+    public float StaminaRegenLockNormalized
+    {
+        get
+        {
+            float maxLock = Mathf.Max(staminaRegenDelay, exhaustionDelay, 0.01f);
+            return Mathf.Clamp01(StaminaRegenLockRemaining / maxLock);
+        }
+    }
+
     public event Action<int> OnTakeDamage;
+    public event Action OnDeath;
 
     private static readonly int DeathTrigger = Animator.StringToHash("Death");
     private static readonly int ResetTrigger = Animator.StringToHash("Reset");
@@ -44,17 +56,20 @@ public class CharacterStats : MonoBehaviour
         currentStamina = maxStamina;
         _startPosition = transform.position;
         _startRotation = transform.rotation;
-        
+
         _animator = GetComponentInChildren<Animator>();
         _agent = GetComponent<NavMeshAgent>();
         _collider = GetComponent<Collider>();
     }
 
-    void Start() { UpdateUI(); }
+    void Start()
+    {
+        UpdateUI();
+    }
 
     void Update()
     {
-        if (_isDead) return; 
+        if (_isDead) return;
 
         if (currentStamina < maxStamina && Time.time > _regenStartTime)
         {
@@ -70,7 +85,7 @@ public class CharacterStats : MonoBehaviour
 
         OnTakeDamage?.Invoke(damage);
         currentHealth -= damage;
-        
+
         if (currentHealth <= 0)
         {
             currentHealth = 0;
@@ -82,33 +97,30 @@ public class CharacterStats : MonoBehaviour
 
     private void Die()
     {
-        if (_isDead) return; 
+        if (_isDead) return;
         _isDead = true;
-        
-        // 1. Play Animation
-        if (_animator != null) 
+        OnDeath?.Invoke();
+
+        if (_animator != null)
         {
-            // Clear any hit triggers so they don't override death
-            _animator.ResetTrigger("Hit"); 
+            _animator.ResetTrigger("Hit");
             _animator.SetTrigger(DeathTrigger);
         }
 
-        // 2. Disable Physics/Movement
-        if (_agent != null) 
+        if (_agent != null)
         {
             _agent.isStopped = true;
-            _agent.enabled = false; 
+            _agent.enabled = false;
         }
 
         if (_collider != null) _collider.enabled = false;
-        
-        CharacterController cc = GetComponent<CharacterController>();
-        if(cc != null) cc.enabled = false;
 
-        // 3. Game Over Screen
+        CharacterController cc = GetComponent<CharacterController>();
+        if (cc != null) cc.enabled = false;
+
         if (GameManager.Instance != null)
         {
-            GameManager.Instance.TriggerGameOver(!isPlayer); 
+            GameManager.Instance.TriggerGameOver(!isPlayer);
         }
     }
 
@@ -117,65 +129,63 @@ public class CharacterStats : MonoBehaviour
         _isDead = false;
         currentHealth = maxHealth;
         currentStamina = maxStamina;
-        
-        // 1. Reset External Scripts (Boss AI / Player Movement)
+        _regenStartTime = 0f;
+
         SkeletonAI bossAI = GetComponent<SkeletonAI>();
         if (bossAI != null) bossAI.ResetAI();
 
         Walk playerWalk = GetComponent<Walk>();
         if (playerWalk != null) playerWalk.IsMovementLocked = false;
 
-        // 2. Enable Components & Teleport
         if (_collider != null) _collider.enabled = true;
-        
-        CharacterController cc = GetComponent<CharacterController>();
-        if(cc != null) cc.enabled = true; // Must be enabled to move
 
-        if (_agent != null) 
+        CharacterController cc = GetComponent<CharacterController>();
+        if (cc != null) cc.enabled = true;
+
+        if (_agent != null)
         {
             _agent.enabled = true;
-            _agent.Warp(_startPosition); 
+            _agent.Warp(_startPosition);
             _agent.isStopped = false;
         }
         else if (cc != null)
         {
-            // CC override
-            cc.enabled = false; 
+            cc.enabled = false;
             transform.position = _startPosition;
             transform.rotation = _startRotation;
             cc.enabled = true;
         }
-        else 
+        else
         {
             transform.position = _startPosition;
             transform.rotation = _startRotation;
         }
 
-        // 3. Nuclear Animator Reset
         if (_animator != null)
         {
-            // Rebind resets the animator to its start state (Entry)
-            _animator.Rebind(); 
-            
-            // Just in case Rebind didn't clear triggers (Unity version dependent)
+            _animator.Rebind();
             _animator.ResetTrigger(DeathTrigger);
+            _animator.ResetTrigger(ResetTrigger);
             _animator.ResetTrigger("Hit");
-            
-            // Force state
             _animator.Play("Locomotion");
         }
 
         UpdateUI();
     }
 
+    public bool CanSpendStamina(float amount)
+    {
+        return !isPlayer || currentStamina >= amount;
+    }
+
     public bool UseStamina(float amount)
     {
-        if (!isPlayer) return true; 
+        if (!isPlayer) return true;
 
         if (currentStamina >= amount)
         {
             currentStamina -= amount;
-            if (currentStamina <= 0.1f) 
+            if (currentStamina <= 0.1f)
             {
                 currentStamina = 0;
                 _regenStartTime = Time.time + exhaustionDelay;
@@ -184,10 +194,12 @@ public class CharacterStats : MonoBehaviour
             {
                 _regenStartTime = Time.time + staminaRegenDelay;
             }
+
             UpdateUI();
-            return true; 
+            return true;
         }
-        return false; 
+
+        return false;
     }
 
     public void PauseStaminaRegen(float duration)

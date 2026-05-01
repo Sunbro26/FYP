@@ -1,0 +1,46 @@
+{
+  "style": "defensive",
+  "positive_style_index": 1,
+  "input_size": 39,
+  "hidden_sizes": [
+    256,
+    256
+  ],
+  "best_epoch": 3,
+  "loss_type": "weighted_lsgan_mse",
+  "target_scores": {
+    "positive": 1.0,
+    "negative": -1.0
+  },
+  "train_metrics": {
+    "style": "defensive",
+    "best_epoch": 3,
+    "train_loss": 4.8037059090698386e-05,
+    "validation_loss": 4.389848526484953e-05,
+    "train_accuracy": 0.9617936859038809,
+    "validation_accuracy": 0.9758874748827864,
+    "train_positive_score_mean": 0.5749720931053162,
+    "train_negative_score_mean": -0.7257272601127625,
+    "validation_positive_score_mean": 0.8996186256408691,
+    "validation_negative_score_mean": -0.5272085666656494,
+    "input_size": 39
+  },
+  "split": {
+    "train_files": [
+      "config\\SkeletonDemos\\SkeletonAggressi_5.demo",
+      "config\\SkeletonDemos\\SkeletonAggressi_7.demo",
+      "config\\SkeletonDemos\\SkeletonDefensiv.demo",
+      "config\\SkeletonDemos\\SkeletonDefensiv_0.demo",
+      "config\\SkeletonDemos\\SkeletonDefensiv_2.demo",
+      "config\\SkeletonDemos\\SkeletonDefensiv_3.demo",
+      "config\\SkeletonDemos\\SkeletonDefensiv_4.demo",
+      "config\\SkeletonDemos\\SkeletonDefensiv_5.demo"
+    ],
+    "validation_files": [
+      "config\\SkeletonDemos\\SkeletonAggressi_9.demo",
+      "config\\SkeletonDemos\\SkeletonDefensiv_1.demo"
+    ],
+    "train_rows": 4973,
+    "validation_rows": 1493
+  }
+}

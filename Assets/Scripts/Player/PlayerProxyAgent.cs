@@ -13,101 +13,204 @@ public class PlayerProxyAgent : Agent
     public PlayerDodge dodgeScript;
     public PlayerParry parryScript;
     public CharacterStats myStats;
-    
+
     [Header("Environment")]
     public Transform enemyTransform;
-    public Telemetry telemetrySystem; // Must be assigned!
+    public Telemetry telemetrySystem;
 
-    private Vector3 _lastEnemyPos;
-    
+    [Header("Stamina Discipline")]
+    [Tooltip("Extra stamina to preserve before allowing an attack. This helps keep enough reserve for defense.")]
+    public float attackReserveStamina = 15f;
+    [Tooltip("If stamina is regen-locked and below this ratio, suppress attacks to stop panic-exhaustion loops.")]
+    [Range(0f, 1f)] public float lowStaminaRatioDuringRegenLock = 0.35f;
 
-    // --- 1. OBSERVATIONS (The Inputs) ---
-    // Total Size: 20 Floats
-public override void CollectObservations(VectorSensor sensor)
+    const int ObservationSize = 22;
+
+    bool IsInputSuppressed()
     {
-        if (enemyTransform == null || telemetrySystem == null)
+        return myStats != null && myStats.IsDead;
+    }
+
+    void AddZeroObservations(VectorSensor sensor)
+    {
+        for (int i = 0; i < ObservationSize; i++)
         {
-            // Fallback padding (Must match 22!)
-            for(int i=0; i<22; i++) sensor.AddObservation(0f);
+            sensor.AddObservation(0f);
+        }
+    }
+
+    void ClearControlledInputs()
+    {
+        if (walkScript != null)
+        {
+            walkScript.SetInput(Vector2.zero);
+        }
+
+        if (blockScript != null)
+        {
+            blockScript.SetBlocking(false);
+        }
+    }
+
+    bool HasAttackReserve()
+    {
+        if (myStats == null || attackScript == null)
+        {
+            return false;
+        }
+
+        return myStats.currentStamina >= attackScript.StaminaCost + attackReserveStamina;
+    }
+
+    bool IsLowStaminaDuringRegenLock()
+    {
+        if (myStats == null || myStats.maxStamina <= 0f)
+        {
+            return false;
+        }
+
+        return myStats.IsStaminaRegenLocked && (myStats.currentStamina / myStats.maxStamina) <= lowStaminaRatioDuringRegenLock;
+    }
+
+    bool CanAttemptAttackNow()
+    {
+        if (attackScript == null || !attackScript.CanAttemptAttack())
+        {
+            return false;
+        }
+
+        if (!HasAttackReserve())
+        {
+            return false;
+        }
+
+        if (IsLowStaminaDuringRegenLock())
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    bool CanAttemptDodgeNow()
+    {
+        return dodgeScript != null && dodgeScript.CanAttemptDodge();
+    }
+
+    bool CanAttemptParryNow()
+    {
+        return parryScript != null && parryScript.CanAttemptParry();
+    }
+
+    public override void CollectObservations(VectorSensor sensor)
+    {
+        if (enemyTransform == null || telemetrySystem == null || IsInputSuppressed())
+        {
+            AddZeroObservations(sensor);
             return;
         }
 
-        // --- GROUP 1: Self State (4 Floats) ---
-        sensor.AddObservation(blockScript.IsBlocking ? 1f : 0f); 
-        sensor.AddObservation(dodgeScript.IsInvincible ? 1f : 0f); 
+        sensor.AddObservation(blockScript != null && blockScript.IsBlocking ? 1f : 0f);
+        sensor.AddObservation(dodgeScript != null && dodgeScript.IsInvincible ? 1f : 0f);
         sensor.AddObservation(telemetrySystem.PlayerHealthPercentage_Agent);
         sensor.AddObservation(telemetrySystem.PlayerStaminaPercentage_Agent);
 
-        // --- GROUP 2: Physical/Spatial (7 Floats) ---
         float distance = Vector3.Distance(transform.position, enemyTransform.position);
         sensor.AddObservation(distance);
-        sensor.AddObservation(transform.forward); // Vector3 (3 floats)
+        sensor.AddObservation(transform.forward);
         Vector3 dirToEnemy = (enemyTransform.position - transform.position).normalized;
-        sensor.AddObservation(dirToEnemy); // Vector3 (3 floats)
+        sensor.AddObservation(dirToEnemy);
 
-        // --- GROUP 3: Enemy Intent (THE TELL) (8 Floats) ---
-        sensor.AddObservation(telemetrySystem.EnemyFSMState_Agent);    // 1
-        sensor.AddObservation(telemetrySystem.IsEnemyAttacking_Agent); // 1
-        sensor.AddObservation(enemyTransform.forward);                // Vector3 (3)
-        sensor.AddObservation(telemetrySystem.RelativeFacing_Agent);  // 1
-        
-        // --- NEW DATA FOR PARRY/DODGE TIMING ---
-        sensor.AddObservation(telemetrySystem.EnemyAttackID_Agent);       // 1
-        sensor.AddObservation(telemetrySystem.EnemyAttackProgress_Agent); // 1
+        sensor.AddObservation(telemetrySystem.EnemyFSMState_Agent);
+        sensor.AddObservation(telemetrySystem.IsEnemyAttacking_Agent);
+        sensor.AddObservation(enemyTransform.forward);
+        sensor.AddObservation(telemetrySystem.RelativeFacing_Agent);
+        sensor.AddObservation(telemetrySystem.EnemyAttackID_Agent);
+        sensor.AddObservation(telemetrySystem.EnemyAttackProgress_Agent);
 
-        // --- GROUP 4: Performance Feedback (3 Floats) ---
         sensor.AddObservation(telemetrySystem.PlayerEnemyDistanceChange_Agent);
-        sensor.AddObservation(telemetrySystem.RecentDamageDealtByPlayer_Agent / 100f); 
-        sensor.AddObservation(telemetrySystem.RecentDamageReceivedByPlayer_Agent / 100f); 
-
-        // RECALCULATE TOTAL: 4 + 7 + 8 + 3 = 22 Floats.
+        sensor.AddObservation(telemetrySystem.RecentDamageDealtByPlayer_Agent / 100f);
+        sensor.AddObservation(telemetrySystem.RecentDamageReceivedByPlayer_Agent / 100f);
     }
 
-    // --- 2. ACTIONS (The Brain driving the Body) ---
- public override void OnActionReceived(ActionBuffers actions)
+    public override void WriteDiscreteActionMask(IDiscreteActionMask actionMask)
     {
-        // 1. Force Rotation to Face Enemy
+        if (IsInputSuppressed())
+        {
+            for (int action = 1; action <= 4; action++)
+            {
+                actionMask.SetActionEnabled(0, action, false);
+            }
+            return;
+        }
+
+        if (!CanAttemptAttackNow())
+        {
+            actionMask.SetActionEnabled(0, 1, false);
+        }
+
+        if (blockScript == null)
+        {
+            actionMask.SetActionEnabled(0, 2, false);
+        }
+
+        if (!CanAttemptDodgeNow())
+        {
+            actionMask.SetActionEnabled(0, 3, false);
+        }
+
+        if (!CanAttemptParryNow())
+        {
+            actionMask.SetActionEnabled(0, 4, false);
+        }
+    }
+
+    public override void OnActionReceived(ActionBuffers actions)
+    {
+        if (IsInputSuppressed())
+        {
+            ClearControlledInputs();
+            return;
+        }
+
         if (enemyTransform != null)
         {
             Vector3 directionToEnemy = (enemyTransform.position - transform.position).normalized;
-            directionToEnemy.y = 0; 
+            directionToEnemy.y = 0f;
             if (directionToEnemy != Vector3.zero)
             {
                 transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(directionToEnemy), Time.deltaTime * 10f);
             }
         }
 
-        // 2. Movement
         float inputForward = actions.ContinuousActions[1];
         float inputStrafe = actions.ContinuousActions[0];
 
-        if (walkScript != null) 
+        if (walkScript != null)
+        {
             walkScript.SetInput(new Vector2(inputStrafe, inputForward));
+        }
 
-        // 3. Discrete Actions: Buttons
-        // 0=None, 1=Atk, 2=Block, 3=Dodge, 4=Parry
         int button = actions.DiscreteActions[0];
 
-        // Reset persistent states
-        if (blockScript != null) blockScript.SetBlocking(false); 
+        if (blockScript != null)
+        {
+            blockScript.SetBlocking(false);
+        }
 
         switch (button)
         {
-            case 1: // ATTACK
-                if (attackScript) attackScript.AttemptAttack(); 
+            case 1:
+                if (CanAttemptAttackNow()) attackScript.AttemptAttack();
                 break;
-
-            case 2: // BLOCK
-                if (blockScript) blockScript.SetBlocking(true); 
+            case 2:
+                if (blockScript != null) blockScript.SetBlocking(true);
                 break;
-
-            case 3: // DODGE
-                if (dodgeScript) dodgeScript.AttemptDodge(); 
+            case 3:
+                if (CanAttemptDodgeNow()) dodgeScript.AttemptDodge();
                 break;
-            
-            case 4: // PARRY
-                // Ensure PlayerParry has public 'AttemptParry()' method
-                if (parryScript) parryScript.AttemptParry(); 
+            case 4:
+                if (CanAttemptParryNow()) parryScript.AttemptParry();
                 break;
         }
     }
@@ -117,7 +220,14 @@ public override void CollectObservations(VectorSensor sensor)
         var continuous = actionsOut.ContinuousActions;
         var discrete = actionsOut.DiscreteActions;
 
-        continuous[0] = 0; continuous[1] = 0; discrete[0] = 0;
+        continuous[0] = 0f;
+        continuous[1] = 0f;
+        discrete[0] = 0;
+
+        if (IsInputSuppressed())
+        {
+            return;
+        }
 
         if (Keyboard.current != null)
         {
@@ -126,31 +236,19 @@ public override void CollectObservations(VectorSensor sensor)
 
             if (Keyboard.current.dKey.isPressed) continuous[0] = 1f;
             else if (Keyboard.current.aKey.isPressed) continuous[0] = -1f;
-            
-            if (Keyboard.current.spaceKey.wasPressedThisFrame) discrete[0] = 3; // Dodge
-            
-            // Example: 'E' or 'F' for Parry if not using Mouse
-            if (Keyboard.current.fKey.wasPressedThisFrame) discrete[0] = 4; 
+
+            if (Keyboard.current.spaceKey.wasPressedThisFrame && CanAttemptDodgeNow()) discrete[0] = 3;
+            if (Keyboard.current.fKey.wasPressedThisFrame && CanAttemptParryNow()) discrete[0] = 4;
         }
 
         if (Mouse.current != null)
         {
-            if (Mouse.current.leftButton.isPressed) discrete[0] = 1; // Attack
-            
-            // Logic for Block vs Parry on Right Click
-            // Simple approach: Right Click = Block. Use a Key for Parry to be distinct for ML.
-            // Or: If Pressed This Frame = Parry (4), else if Pressed = Block (2).
-            
-            if (Mouse.current.rightButton.wasPressedThisFrame) 
-                discrete[0] = 4; // Parry (Action 4)
-            else if (Mouse.current.rightButton.isPressed) 
-                discrete[0] = 2; // Block (Action 2)
-        }
+            if (Mouse.current.leftButton.isPressed && CanAttemptAttackNow()) discrete[0] = 1;
 
-        if (continuous[0] != 0 || continuous[1] != 0 || discrete[0] != 0)
-        {
-            // Debug.Log($"HEURISTIC: Move=[{continuous[0]}, {continuous[1]}] | Action={discrete[0]}");
+            if (Mouse.current.rightButton.wasPressedThisFrame && CanAttemptParryNow())
+                discrete[0] = 4;
+            else if (Mouse.current.rightButton.isPressed)
+                discrete[0] = 2;
         }
     }
-    
 }

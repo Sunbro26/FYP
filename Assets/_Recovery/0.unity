@@ -2228,7 +2228,7 @@ MonoBehaviour:
     hasUpgradedBrainParametersWithActionSpec: 1
   m_Model: {fileID: 0}
   m_InferenceDevice: 0
-  m_BehaviorType: 1
+  m_BehaviorType: 0
   m_BehaviorName: PlayerProxy
   TeamId: 0
   m_UseChildSensors: 1
@@ -2259,6 +2259,12 @@ MonoBehaviour:
   myStats: {fileID: 312797428}
   enemyTransform: {fileID: 385033935}
   telemetrySystem: {fileID: 312797420}
+  attackFacingDot: 0.45
+  defenseFacingDot: 0.2
+  attackRangePadding: 0.35
+  blockAttackProgressMin: 0.05
+  parryEarlyTolerance: 0.02
+  parryLateTolerance: 0.08
 --- !u!114 &312797434
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2761,8 +2767,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SkeletonAI
   currentPersona:
-    aggression: 0.843
-    fear: 0.202
+    aggression: 0.799
+    fear: 0.206
     decisionFrequency: 1.52
     preferredCombatRange: 1.25
   sensorRadius: 15
@@ -2996,11 +3002,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Unity.ML-Agents::Unity.MLAgents.Policies.BehaviorParameters
   m_BrainParameters:
-    VectorObservationSize: 30
+    VectorObservationSize: 28
     NumStackedVectorObservations: 1
     m_ActionSpec:
       m_NumContinuousActions: 2
-      BranchSizes: 09000000
+      BranchSizes: 04000000
     VectorActionSize: 
     VectorActionDescriptions: []
     VectorActionSpaceType: 0
@@ -3008,7 +3014,7 @@ MonoBehaviour:
   m_Model: {fileID: 0}
   m_InferenceDevice: 0
   m_BehaviorType: 0
-  m_BehaviorName: SkeletonAI
+  m_BehaviorName: Skeleton brain
   TeamId: 0
   m_UseChildSensors: 1
   m_UseChildActuators: 1
@@ -13633,5 +13639,3 @@ SceneRoots:
   - {fileID: 293390288}
   - {fileID: 487978441}
   - {fileID: 1722857666}
-
-

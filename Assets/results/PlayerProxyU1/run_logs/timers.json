@@ -2,39 +2,39 @@
     "name": "root",
     "metadata": {
         "timer_format_version": "0.1.0",
-        "start_time_seconds": "1772402119",
+        "start_time_seconds": "1775094449",
         "python_version": "3.10.12 (main, Dec  7 2025, 14:29:16) [MSC v.1944 64 bit (AMD64)]",
-        "command_line_arguments": "D:\\Uni\\FYP\\FYP\\.venv\\Scripts\\mlagents-learn config/skeleton_multigail.yaml --run-id=SkeletonProxyBase --force --time-scale 2",
+        "command_line_arguments": "D:\\Uni\\FYP\\FYP\\.venv\\Scripts\\mlagents-learn config\\player_trainer_config.yaml --run-id=PlayerProxyU1 --force",
         "mlagents_version": "1.1.0",
         "mlagents_envs_version": "1.1.0",
         "communication_protocol_version": "1.5.0",
         "pytorch_version": "2.1.1+cpu",
         "numpy_version": "1.23.5",
-        "end_time_seconds": "1772402187"
+        "end_time_seconds": "1775094512"
     },
-    "total": 67.97640659999979,
+    "total": 63.32302690000506,
     "count": 1,
-    "self": 0.017602199998691503,
+    "self": 0.2579786999995122,
     "children": {
         "run_training.setup": {
-            "total": 0.17295880000074249,
+            "total": 0.22152890000143088,
             "count": 1,
-            "self": 0.17295880000074249
+            "self": 0.22152890000143088
         },
         "TrainerController.start_learning": {
-            "total": 67.78584560000036,
+            "total": 62.84351930000412,
             "count": 1,
-            "self": 0.0003283000005467329,
+            "self": 0.016545699996640906,
             "children": {
                 "TrainerController._reset_env": {
-                    "total": 67.78545829999985,
+                    "total": 62.8005264000094,
                     "count": 1,
-                    "self": 67.78545829999985
+                    "self": 62.8005264000094
                 },
                 "TrainerController._save_models": {
-                    "total": 5.899999996472616e-05,
+                    "total": 0.02644719999807421,
                     "count": 1,
-                    "self": 5.899999996472616e-05
+                    "self": 0.02644719999807421
                 }
             }
         }
