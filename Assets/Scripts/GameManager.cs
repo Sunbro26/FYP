@@ -45,7 +45,8 @@ public class GameManager : MonoBehaviour
         }
 
         // 3. Wait (Realtime, ignoring timeScale)
-        yield return new WaitForSeconds(restartDelay);
+        // 3. Wait exactly 5 real seconds (6.0s * 0.5 timescale )
+        yield return new WaitForSeconds(6.0f * Time.timeScale);
 
         // 4. Reset Game State (Simulation Mode)
         ResetSimulation();

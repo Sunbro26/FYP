@@ -55,6 +55,17 @@ public class Telemetry : MonoBehaviour
     public int TotalDodges_Agent { get; private set; }
     public int TotalBlocks_Agent { get; private set; }
 
+    // FOR QUANTITATIVE DATA (ADDITIONAL, MIGHT REMOVE AFTER CHECKING IF THIS IS CORRECT)
+    // Lifetime counters — full fight totals, used by FightLogger
+    public int LifetimeAttacks { get; private set; }
+    public int LifetimeParries { get; private set; }
+    public int LifetimeDodges { get; private set; }
+    public int LifetimeBlocks { get; private set; }
+    public float LifetimeDamageDealt { get; private set; }
+    public float LifetimeDamageReceived { get; private set; }
+
+
+
     public float EnemyAttackID_Agent { get; private set; }
     public float EnemyAttackProgress_Agent { get; private set; }
 
@@ -262,15 +273,15 @@ public class Telemetry : MonoBehaviour
         return 0f;
     }
 
-    private void HandleAttackAttempt() { _attackAttempts.Add(Time.time); }
+    private void HandleAttackAttempt() { _attackAttempts.Add(Time.time); LifetimeAttacks++; }
     private void HandleAttackSuccess() { _attackSuccesses.Add(Time.time); }
-    private void HandleParryAttempt() { _parryAttempts.Add(Time.time); }
+    private void HandleParryAttempt() { _parryAttempts.Add(Time.time); LifetimeParries++;  }
     private void HandleParrySuccess() { _parrySuccesses.Add(Time.time); }
-    private void HandleDodgeAttempt() { _dodgeAttempts.Add(Time.time); }
+    private void HandleDodgeAttempt() { _dodgeAttempts.Add(Time.time); LifetimeDodges++;  }
     private void HandleDodgeSuccess() { _dodgeSuccesses.Add(Time.time); }
-    private void HandleBlockSuccess() { _blockSuccesses.Add(Time.time); }
-    private void HandleDamageDealt(int amount) { _damageDealtHistory.Add(new KeyValuePair<float, float>(Time.time, amount)); }
-    private void HandleDamageReceived(int amount) { _damageReceivedHistory.Add(new KeyValuePair<float, float>(Time.time, amount)); }
+    private void HandleBlockSuccess() { _blockSuccesses.Add(Time.time); LifetimeBlocks++; }
+    private void HandleDamageDealt(int amount) { _damageDealtHistory.Add(new KeyValuePair<float, float>(Time.time, amount)); LifetimeDamageDealt += amount; }
+    private void HandleDamageReceived(int amount) { _damageReceivedHistory.Add(new KeyValuePair<float, float>(Time.time, amount)); LifetimeDamageReceived += amount;  }
 
     private void HandleEnemyAttackAttempt(string name) { if (!_enemyAttackAttempts.ContainsKey(name)) _enemyAttackAttempts[name] = 0; _enemyAttackAttempts[name]++; }
     private void HandleEnemyAttackSuccess(string name) { if (!_enemyAttackSuccesses.ContainsKey(name)) _enemyAttackSuccesses[name] = 0; _enemyAttackSuccesses[name]++; }
@@ -285,4 +296,15 @@ public class Telemetry : MonoBehaviour
         Debug.Log($"[SKILL] Parry: {ParrySuccessRate_Agent:P0} | Dodge: {DodgeSuccessRate_Agent:P0} | Block: {BlockSuccessRate_Agent:P0}");
         Debug.Log($"[TACTICAL] Dist: {PlayerEnemyDistance_Agent:F1} | Facing: {RelativeFacing_Agent:F2} | EnemyState: {enemyAI?.currentState}");
     }
+
+    public void ResetLifetimeCounters()
+    {
+        LifetimeAttacks = 0;
+        LifetimeParries = 0;
+        LifetimeDodges = 0;
+        LifetimeBlocks = 0;
+        LifetimeDamageDealt = 0f;
+        LifetimeDamageReceived = 0f;
+    }
+
 }
