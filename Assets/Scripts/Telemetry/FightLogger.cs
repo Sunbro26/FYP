@@ -1,14 +1,22 @@
 using UnityEngine;
 using System.IO;
 using System.Text;
+using System.Collections.Generic;
 
 /// <summary>
-/// Logs one CSV row per fight session to persistent storage.
-/// Triggers SurveyUI after each fight ends (with delay so You Died shows first).
-/// Fight restart is independent of survey — system never gets stuck.
+/// Logs per-fight data to two CSV files:
+///   fight_log.csv           — one row per fight, all summary metrics
+///   attack_distribution.csv — one row per attack type per fight
+///
+/// Agent type is AUTO-DETECTED from bossAI.useExternalAI — no manual input needed.
+///   useExternalAI = false  -->  logs as "Heuristic"
+///   useExternalAI = true   -->  logs as "Trained"
+///
+/// Only personaLabel needs to be set manually in Inspector.
 ///
 /// SETUP IN UNITY:
-///  4. Set personaLabel to "Aggressive" or "Defensive" before each test session.
+///   4. Set personaLabel to "Aggressive" or "Defensive" before each session.
+///   5. Agent type is read automatically from boss — no other changes needed.
 /// </summary>
 public class FightLogger : MonoBehaviour
 {
@@ -19,15 +27,16 @@ public class FightLogger : MonoBehaviour
     [SerializeField] private CharacterStats bossStats;
     [SerializeField] private SurveyUI surveyUI;
 
-    [Header("Persona Label — change this before each test session")]
+    [Header("Persona Label — only thing to change manually")]
     [Tooltip("Type exactly: Aggressive   or   Defensive")]
     [SerializeField] private string personaLabel = "Aggressive";
 
     [Header("Timing")]
-    [Tooltip("Seconds after fight ends before survey appears. You Died screen shows during this time.")]
+    [Tooltip("Seconds after fight ends before survey appears. You Died shows during this window.")]
     [SerializeField] private float surveyDelay = 6f;
 
     // Internal fight state 
+    private string _agentType = "Heuristic"; // auto-detected
     private float _fightStartTime;
     private float _playerSurvivalTime;
     private bool _sessionActive = false;
@@ -41,10 +50,12 @@ public class FightLogger : MonoBehaviour
     private int _bossRetreatCount = 0;
     private SkeletonAI.AIState _lastBossState = SkeletonAI.AIState.Idle;
 
-    private string _csvPath;
+    //  CSV paths 
+    private string _fightCsvPath;
+    private string _attackCsvPath;
 
-    private const string CSV_HEADER =
-        "session,persona,aggression,fear," +
+    private const string FIGHT_CSV_HEADER =
+        "session,agent_type,persona,aggression,fear," +
         "fight_duration,player_survived,player_survival_time," +
         "player_hp_pct,boss_hp_pct," +
         "avg_distance," +
@@ -54,19 +65,29 @@ public class FightLogger : MonoBehaviour
         "player_parries,player_blocks," +
         "damage_dealt,damage_received";
 
+    private const string ATTACK_CSV_HEADER =
+        "session,agent_type,persona,attack_name,count,proportion";
 
     void Awake()
     {
-        _csvPath = Path.Combine(Application.persistentDataPath, "fight_log.csv");
-        if (!File.Exists(_csvPath))
+        _fightCsvPath = Path.Combine(Application.persistentDataPath, "fight_log.csv");
+        _attackCsvPath = Path.Combine(Application.persistentDataPath, "attack_distribution.csv");
+
+        if (!File.Exists(_fightCsvPath))
         {
-            File.WriteAllText(_csvPath, CSV_HEADER + "\n", Encoding.UTF8);
-            Debug.Log($"[FightLogger] Created log at: {_csvPath}");
+            File.WriteAllText(_fightCsvPath, FIGHT_CSV_HEADER + "\n", Encoding.UTF8);
+            _sessionNumber = 0;
         }
         else
         {
-            Debug.Log($"[FightLogger] Appending to existing log at: {_csvPath}");
+            string[] lines = File.ReadAllLines(_fightCsvPath);
+            _sessionNumber = Mathf.Max(0, lines.Length - 1);
         }
+
+        if (!File.Exists(_attackCsvPath))
+            File.WriteAllText(_attackCsvPath, ATTACK_CSV_HEADER + "\n", Encoding.UTF8);
+
+        Debug.Log($"[FightLogger] Starting from fight #{_sessionNumber + 1}");
     }
 
     void Start()
@@ -97,9 +118,7 @@ public class FightLogger : MonoBehaviour
         {
             if (bossAI.currentState == SkeletonAI.AIState.Retreating
                 && _lastBossState != SkeletonAI.AIState.Retreating)
-            {
                 _bossRetreatCount++;
-            }
             _lastBossState = bossAI.currentState;
         }
 
@@ -118,8 +137,23 @@ public class FightLogger : MonoBehaviour
 
     private void BeginFight()
     {
-        // Cancel any leftover pending Invokes from previous session
+
         CancelInvoke();
+
+        // Auto-detect agent type from Behaviour Parameters
+        var behaviourParams = bossAI.GetComponent
+            <Unity.MLAgents.Policies.BehaviorParameters>();
+
+        if (behaviourParams != null &&
+            behaviourParams.BehaviorType ==
+            Unity.MLAgents.Policies.BehaviorType.HeuristicOnly)
+        {
+            _agentType = "Heuristic";
+        }
+        else
+        {
+            _agentType = "Trained";
+        }
 
         _fightStartTime = Time.time;
         _playerDiedThisFight = false;
@@ -137,7 +171,8 @@ public class FightLogger : MonoBehaviour
         // Reset telemetry lifetime counters for clean per-fight data
         if (telemetry != null) telemetry.ResetLifetimeCounters();
 
-        Debug.Log($"[FightLogger] Fight {_sessionNumber} started — Persona: {personaLabel}");
+        Debug.Log($"[FightLogger] Fight {_sessionNumber} started | " +
+                  $"AgentType:{_agentType} | Persona:{personaLabel}");
     }
 
     private void EndFight()
@@ -168,23 +203,16 @@ public class FightLogger : MonoBehaviour
         float bossRetreatFreq = fightDuration > 0f
             ? (float)_bossRetreatCount / fightDuration : 0f;
 
-        // Write CSV row immediately
-        WriteRow(fightDuration, playerWon, playerHpPct, bossHpPct,
-                 aggression, fear, avgDistance, bossRetreatFreq);
+        // Write both CSV rows
+        // Write both CSV rows — wrapped in try-catch inside each method
+        WriteFightRow(fightDuration, playerWon, playerHpPct, bossHpPct,
+                      aggression, fear, avgDistance, bossRetreatFreq);
+        WriteAttackDistribution();
 
-        Debug.Log($"[FightLogger] Fight {_sessionNumber} logged | " +
-                  $"Duration:{fightDuration:F1}s | PlayerWon:{playerWon} | " +
-                  $"Persona:{personaLabel} | AvgDist:{avgDistance:F1} | " +
-                  $"BossAttacks:{bossAI?.totalAttacksThisFight} | " +
-                  $"Retreats:{_bossRetreatCount}");
-
-        // Show survey after delay — You Died screen shows during this window
+        // These ALWAYS execute regardless of whether CSV write succeeded
         if (surveyUI != null)
             Invoke(nameof(ShowSurveyDelayed), surveyDelay);
 
-        // Fight ALWAYS restarts on a long fallback timer — independent of survey
-        // If player fills survey, OnSurveyComplete() cancels this and restarts sooner
-        // 120 seconds gives plenty of time to fill the survey
         Invoke(nameof(BeginFight), surveyDelay + 120f);
     }
 
@@ -196,21 +224,16 @@ public class FightLogger : MonoBehaviour
 
     /// <summary>
     /// Called by SurveyUI after player submits responses.
-    /// Cancels the long fallback timer and restarts fight immediately.
+    /// Cancels the long fallback timer and restarts fight after short delay.
     /// </summary>
     public void OnSurveyComplete()
     {
-        // Cancel both the fallback BeginFight and any pending survey show
         CancelInvoke(nameof(BeginFight));
         CancelInvoke(nameof(ShowSurveyDelayed));
-
-        // Restart after GameManager has finished its reset sequence
         Invoke(nameof(BeginFight), 3.5f);
     }
 
-    //  CSV Write 
-
-    private void WriteRow(
+    private void WriteFightRow(
         float fightDuration, bool playerWon,
         float playerHpPct, float bossHpPct,
         float aggression, float fear,
@@ -218,7 +241,7 @@ public class FightLogger : MonoBehaviour
     {
         if (telemetry == null)
         {
-            Debug.LogWarning("[FightLogger] Telemetry null — row skipped.");
+            Debug.LogWarning("[FightLogger] Telemetry null — fight row skipped.");
             return;
         }
 
@@ -227,17 +250,17 @@ public class FightLogger : MonoBehaviour
             ? (float)bossAttacks / fightDuration : 0f;
 
         string row = string.Format(
-            "{0},{1},{2:F3},{3:F3}," +
-            "{4:F2},{5},{6:F2}," +
-            "{7:F3},{8:F3}," +
-            "{9:F2}," +
-            "{10},{11:F3}," +
-            "{12},{13:F3}," +
-            "{14},{15}," +
-            "{16},{17}," +
-            "{18:F2},{19:F2}",
+            "{0},{1},{2},{3:F3},{4:F3}," +
+            "{5:F2},{6},{7:F2}," +
+            "{8:F3},{9:F3}," +
+            "{10:F2}," +
+            "{11},{12:F3}," +
+            "{13},{14:F3}," +
+            "{15},{16}," +
+            "{17},{18}," +
+            "{19:F2},{20:F2}",
 
-            _sessionNumber, personaLabel, aggression, fear,
+            _sessionNumber, _agentType, personaLabel, aggression, fear,
             fightDuration, playerWon ? 1 : 0, _playerSurvivalTime,
             playerHpPct, bossHpPct,
             avgDistance,
@@ -248,9 +271,59 @@ public class FightLogger : MonoBehaviour
             telemetry.LifetimeDamageDealt, telemetry.LifetimeDamageReceived
         );
 
-        File.AppendAllText(_csvPath, row + "\n", Encoding.UTF8);
+        try
+        {
+            File.AppendAllText(_fightCsvPath, row + "\n", Encoding.UTF8);
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"[FightLogger] Could not write fight row — is the CSV open in another program? Error: {e.Message}");
+        }
     }
 
-    //  Public getter used by SurveyUI 
+    private void WriteAttackDistribution()
+    {
+        if (telemetry == null) return;
+
+        Dictionary<string, int> dist = telemetry.GetEnemyAttackDistribution();
+        if (dist == null || dist.Count == 0)
+        {
+            Debug.LogWarning("[FightLogger] Attack distribution empty — skipping distribution log.");
+            return;
+        }
+
+        // Compute total for proportions
+        int total = 0;
+        foreach (var kvp in dist) total += kvp.Value;
+        if (total == 0) return;
+
+        foreach (var kvp in dist)
+        {
+            float proportion = (float)kvp.Value / total;
+            string row = string.Format(
+                "{0},{1},{2},{3},{4},{5:F4}",
+                _sessionNumber,
+                _agentType,
+                personaLabel,
+                kvp.Key,
+                kvp.Value,
+                proportion
+            );
+            try
+            {
+                File.AppendAllText(_attackCsvPath, row + "\n", Encoding.UTF8);
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"[FightLogger] Could not write attack distribution — is the CSV open? Error: {e.Message}");
+            }
+        }
+
+        Debug.Log($"[FightLogger] Attack distribution logged — " +
+                  $"{dist.Count} attack types, total:{total}");
+    }
+
+    //  Public getters used by SurveyUI 
     public string GetPersonaLabel() => personaLabel;
+    public string GetAgentType() => _agentType;
 }

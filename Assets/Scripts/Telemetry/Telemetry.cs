@@ -273,6 +273,13 @@ public class Telemetry : MonoBehaviour
         return 0f;
     }
 
+    /// <summary>
+    /// Returns a copy of the enemy attack attempt counts for this fight.
+    /// Called by FightLogger at fight end — read only, no effect on game logic.
+    /// </summary>
+    public Dictionary<string, int> GetEnemyAttackDistribution()
+        => new Dictionary<string, int>(_enemyAttackAttempts);
+
     private void HandleAttackAttempt() { _attackAttempts.Add(Time.time); LifetimeAttacks++; }
     private void HandleAttackSuccess() { _attackSuccesses.Add(Time.time); }
     private void HandleParryAttempt() { _parryAttempts.Add(Time.time); LifetimeParries++;  }
@@ -305,6 +312,8 @@ public class Telemetry : MonoBehaviour
         LifetimeBlocks = 0;
         LifetimeDamageDealt = 0f;
         LifetimeDamageReceived = 0f;
+        _enemyAttackAttempts.Clear();   // ADD THIS — clean distribution per fight
+        _enemyAttackSuccesses.Clear();  // ADD THIS — clean successes per fight
     }
 
 }

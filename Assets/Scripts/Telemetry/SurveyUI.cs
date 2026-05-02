@@ -5,60 +5,74 @@ using System.IO;
 using System.Text;
 
 /// <summary>
-/// Post-fight survey — 3 research-backed questions:
-///   Q1 - Challenge Calibration     (GEQ framework — IJsselsteijn et al. 2013)
-///   Q2 - Forced Style Change       (Adaptive AI pressure — Yannakakis & Togelius 2011)
-///   Q3 - Flow State / Immersion    (GameFlow — Sweetser & Wyeth 2005)
+///   Q1 - Challenge Calibration  (GEQ — IJsselsteijn et al. 2013)
+///   Q2 - Forced Style Change    (Adaptive AI — Yannakakis & Togelius 2011)
+///   Q3 - Flow State             (GameFlow — Sweetser & Wyeth 2005)
 /// </summary>
 public class SurveyUI : MonoBehaviour
 {
     [Header("Root Panel — the GameObject to show/hide for the whole survey")]
     [SerializeField] private GameObject surveyPanel;
 
-    [Header("Q1 — Challenge Calibration (5 buttons, labeled 1 to 5)")]
-    [SerializeField] private Button[] q1Buttons;          // 5 buttons
-    [SerializeField] private TMP_Text q1SelectionLabel;   // shows current selection
+    // "The boss felt appropriately challenging for my skill level."
+    [Header("Q1 — Challenge Calibration (5 buttons labeled 1 to 5)")]
+    [SerializeField] private Button[] q1Buttons;
+    [SerializeField] private TMP_Text q1SelectionLabel;
 
-
+    // "The boss forced me to change my fighting style during the fight."
     [Header("Q2 — Forced Style Change (5 buttons, 1=Strongly Disagree, 5=Strongly Agree)")]
     [SerializeField] private Button[] q2Buttons;
     [SerializeField] private TMP_Text q2SelectionLabel;
 
-
+    // "I was fully focused on the fight and lost track of time."
     [Header("Q3 — Flow State (5 buttons, 1=Strongly Disagree, 5=Strongly Agree)")]
     [SerializeField] private Button[] q3Buttons;
     [SerializeField] private TMP_Text q3SelectionLabel;
 
-    [Header("Submit Button and Feedback Text")]
+    [Header("Submit")]
     [SerializeField] private Button submitButton;
-    [SerializeField] private TMP_Text feedbackText;  // "Please answer all" or "Saved!"
+    [SerializeField] private TMP_Text feedbackText;   // "Please answer all" / "Saved!"
 
-    [Header("FightLogger Reference (drag the same GameObject that has FightLogger)")]
+    [Header("FightLogger Reference")]
     [SerializeField] private FightLogger fightLogger;
 
-    // Internal
+    //  Internal state
     private int _q1 = 0;
     private int _q2 = 0;
     private int _q3 = 0;
     private int _surveyNumber = 0;
+
     private string _csvPath;
 
+    // survey_log.csv — agent_type added so survey scores split by Heuristic vs Trained
     private const string CSV_HEADER =
-        "survey_num,persona,challenge_calibration_1to5,forced_style_change_1to5,flow_state_1to5";
+        "survey_num,agent_type,persona," +
+        "challenge_calibration_1to5,forced_style_change_1to5,flow_state_1to5";
 
     void Awake()
     {
         _csvPath = Path.Combine(Application.persistentDataPath, "survey_log.csv");
         if (!File.Exists(_csvPath))
+        {
             File.WriteAllText(_csvPath, CSV_HEADER + "\n", Encoding.UTF8);
+            _surveyNumber = 0;
+        }
+        else
+        {
+            // Count existing data rows (excluding header) to continue numbering correctly
+            string[] lines = File.ReadAllLines(_csvPath);
+            _surveyNumber = Mathf.Max(0, lines.Length - 1); // minus 1 for header row
+        }
 
         if (surveyPanel != null) surveyPanel.SetActive(false);
         if (feedbackText != null) feedbackText.gameObject.SetActive(false);
+        Debug.Log($"[SurveyUI] Starting from survey #{_surveyNumber + 1}");
     }
 
     void OnEnable()
     {
-        // Always start hidden and with clean state
+        // Always reset to clean hidden state when scene starts
+        // Prevents stale state from previous Play sessions
         _q1 = 0; _q2 = 0; _q3 = 0;
         if (surveyPanel != null) surveyPanel.SetActive(false);
         if (feedbackText != null) feedbackText.gameObject.SetActive(false);
@@ -75,19 +89,22 @@ public class SurveyUI : MonoBehaviour
         if (submitButton != null) submitButton.onClick.AddListener(OnSubmit);
     }
 
-    // Called by FightLogger after each fight ends 
+    // Public API called by FightLogger after surveyDelay seconds
+
     public void ShowSurvey()
     {
         _q1 = 0; _q2 = 0; _q3 = 0;
         UpdateLabels();
         if (feedbackText != null) feedbackText.gameObject.SetActive(false);
         if (surveyPanel != null) surveyPanel.SetActive(true);
+
+        // Freeze game and unlock cursor so player can click buttons
         Time.timeScale = 0f;
-        Cursor.lockState = CursorLockMode.None;  // ADD THIS
-        Cursor.visible = true;                  // ADD THIS
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
     }
 
-    // Helpers 
+
     private void WireButtons(Button[] buttons, System.Action<int> onSelect)
     {
         if (buttons == null) return;
@@ -101,18 +118,18 @@ public class SurveyUI : MonoBehaviour
     private void UpdateLabels()
     {
         if (q1SelectionLabel != null)
-            q1SelectionLabel.text = _q1 > 0 ? $"Your answer: {_q1} / 5" : "Not answered yet";
+            q1SelectionLabel.text = _q1 > 0 ? $"Selected: {_q1} / 5" : "Not answered";
         if (q2SelectionLabel != null)
-            q2SelectionLabel.text = _q2 > 0 ? $"Your answer: {_q2} / 5" : "Not answered yet";
+            q2SelectionLabel.text = _q2 > 0 ? $"Selected: {_q2} / 5" : "Not answered";
         if (q3SelectionLabel != null)
-            q3SelectionLabel.text = _q3 > 0 ? $"Your answer: {_q3} / 5" : "Not answered yet";
+            q3SelectionLabel.text = _q3 > 0 ? $"Selected: {_q3} / 5" : "Not answered";
     }
 
     private void OnSubmit()
     {
         if (_q1 == 0 || _q2 == 0 || _q3 == 0)
         {
-            ShowFeedback("Please answer all 3 questions before submitting.");
+            ShowFeedback("Please answer all 3 questions.");
             return;
         }
         SaveRow();
@@ -129,18 +146,32 @@ public class SurveyUI : MonoBehaviour
 
     private void CloseSurvey()
     {
+        // Resume game and re-lock cursor
         Time.timeScale = 1f;
-        Cursor.lockState = CursorLockMode.Locked; // ADD THIS
-        Cursor.visible = false;                  // ADD THIS
+        Cursor.lockState = CursorLockMode.Locked;
+        Cursor.visible = false;
+
         if (surveyPanel != null) surveyPanel.SetActive(false);
+
+        // Tell FightLogger survey is done — it cancels fallback timer and restarts fight
+        if (fightLogger != null)
+            fightLogger.OnSurveyComplete();
     }
 
     private void SaveRow()
     {
         _surveyNumber++;
+
+        // Both agent type and persona are read from FightLogger automatically
+        // No manual input required from tester
+        string agentType = fightLogger != null ? fightLogger.GetAgentType() : "Unknown";
         string persona = fightLogger != null ? fightLogger.GetPersonaLabel() : "Unknown";
-        string row = $"{_surveyNumber},{persona},{_q1},{_q2},{_q3}";
+
+        string row = $"{_surveyNumber},{agentType},{persona},{_q1},{_q2},{_q3}";
         File.AppendAllText(_csvPath, row + "\n", Encoding.UTF8);
-        Debug.Log($"[SurveyUI] Saved — Persona:{persona} Q1:{_q1} Q2:{_q2} Q3:{_q3}");
+
+        Debug.Log($"[SurveyUI] Survey {_surveyNumber} saved | " +
+                  $"AgentType:{agentType} | Persona:{persona} | " +
+                  $"Q1:{_q1} Q2:{_q2} Q3:{_q3}");
     }
 }
