@@ -94,6 +94,7 @@ public class SkeletonAI : MonoBehaviour
     private float _strafeTimer = 0f;
     
     public bool canDealDamage = false;
+    [HideInInspector] public int totalAttacksThisFight = 0; //new
     private Vector2 _smoothInputVector; 
 
     // --- Hashes ---
@@ -355,6 +356,7 @@ public class SkeletonAI : MonoBehaviour
         _attackTimer = 0f;
 
         OnEnemyAttackAttempt?.Invoke(_currentExecutingAttack.name);
+        totalAttacksThisFight++; //new
 
         _animator.SetInteger(AttackIndex, _currentExecutingAttack.animationIndex);
         _animator.SetTrigger(TriggerAttack);
@@ -598,6 +600,7 @@ public class SkeletonAI : MonoBehaviour
         StopAllCoroutines();
         _isActionLocked = false;
         canDealDamage = false;
+        totalAttacksThisFight = 0;
         _currentExecutingAttack = null;
         _plannedAttack = null;
         _attackTimer = 0f;

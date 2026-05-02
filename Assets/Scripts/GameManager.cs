@@ -79,7 +79,9 @@ public class GameManager : MonoBehaviour
             }
         }
 
-        yield return new WaitForSecondsRealtime(restartDelay);
+        // 3. Wait (Realtime, ignoring timeScale)
+        // 3. Wait exactly 5 real seconds (6.0s * 0.5 timescale )
+        yield return new WaitForSeconds(6.0f * Time.timeScale);
 
         ResetSimulation();
         _gameOverRoutine = null;
