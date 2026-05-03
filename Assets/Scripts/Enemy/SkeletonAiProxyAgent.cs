@@ -116,14 +116,16 @@ public class SkeletonAiProxyAgent : Agent
         ApplyTrainingResetOverride();
     }
 
-    void OnEnable()
+    protected override void OnEnable()
     {
+        base.OnEnable();
         ApplyTrainingResetOverride();
         SubscribeDebugInput();
     }
 
-    void OnDisable()
+    protected override void OnDisable()
     {
+        base.OnDisable();
         UnsubscribeDebugInput();
         ReleaseTrainingResetOverride();
         UnsubscribeCombatEvents();
@@ -799,7 +801,7 @@ public class SkeletonAiProxyAgent : Agent
         }
 
         observations.Add((float)skeletonBody.currentState / 5f);
-        observations.Add(skeletonBody.canDealDamage ? 1f : 0f);
+        observations.Add(skeletonBody.CanDealDamage ? 1f : 0f);
 
         float distance = Vector3.Distance(transform.position, skeletonBody._target.position);
         observations.Add(distance);

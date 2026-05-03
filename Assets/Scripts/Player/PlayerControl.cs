@@ -1,23 +1,18 @@
 using UnityEngine;
 using System;
-using System.Collections; 
+using System.Collections;
+using AdaptiveCombatFramework; // --- NEW: Tells the script to use the framework ---
 
 public class PlayerControl : MonoBehaviour
 {
     [Header("Block Settings")]
     public float blockAngle = 60f;
-    
-    [Tooltip("The particle effect prefab to spawn on a successful block.")]
     public GameObject blockSparksPrefab;
-    
-    [Tooltip("The transform where the sparks will appear.")]
     public Transform blockEffectSpawnPoint;
 
     [Header("Guard Break")]
-    [Tooltip("How long the player is stunned when stamina runs out.")]
-    public float guardBreakStunDuration = 3.0f; // Increased default to 3.0
+    public float guardBreakStunDuration = 3.0f; 
 
-    // --- References ---
     private CharacterStats _stats;
     private PlayerBlock _blockScript;
     private PlayerDodge _dodgeScript;
@@ -40,45 +35,37 @@ public class PlayerControl : MonoBehaviour
 
     private void OnTriggerEnter(Collider other)
     {
-        // If I am already dead, ignore all hits.
         if (_stats != null && _stats.IsDead) return;
-        // ------------------------
 
         if (other.gameObject.CompareTag("sword"))
         {
-            SkeletonAI enemyScript = other.GetComponentInParent<SkeletonAI>();
-            if (enemyScript == null || enemyScript.canDealDamage == false) return;
+            // --- DECOUPLING FIX: Look for the Interface, not the Skeleton ---
+            ICombatant enemyScript = other.GetComponentInParent<ICombatant>();
+            if (enemyScript == null || enemyScript.CanDealDamage == false) return;
 
-            var incomingAttack = enemyScript.GetCurrentAttack();
-            int incomingDamage = 10;
-            float incomingStaminaCost = 10f;
-            bool isParriable = true; 
+            // Get clean attack data from the interface
+            int incomingDamage = enemyScript.GetIncomingDamage();
+            float incomingStaminaCost = enemyScript.GetIncomingStaminaCost();
+            bool isParriable = enemyScript.IsIncomingAttackParriable();
 
-            if (incomingAttack != null)
-            {
-                incomingDamage = incomingAttack.damage; 
-                incomingStaminaCost = incomingAttack.blockStaminaCost;
-                isParriable = incomingAttack.isParriable; 
-            }
-
-            // I-Frames Check
             if (_dodgeScript != null && _dodgeScript.IsInvincible) 
             {
                 _dodgeScript.RegisterPerfectDodge(); 
                 return;
             }
 
-            // Parry Check
             PlayerParry parryScript = GetComponent<PlayerParry>();
             if (parryScript != null && parryScript.IsParryWindowActive)
             {
                 if (isParriable) 
                 {
-                    Vector3 directionToEnemy = (enemyScript.transform.position - transform.position).normalized;
+                    // Use GetTransform() because interfaces don't inherently know about Unity Transforms
+                    Vector3 directionToEnemy = (enemyScript.GetTransform().position - transform.position).normalized;
                     float angle = Vector3.Angle(transform.forward, directionToEnemy);
 
                     if (angle <= 60f) 
                     {
+                        Debug.Log("SUCCESSFUL PARRY!");
                         enemyScript.GetParried(); 
                         if (blockSparksPrefab != null && blockEffectSpawnPoint != null)
                             Instantiate(blockSparksPrefab, blockEffectSpawnPoint.position, Quaternion.identity);
@@ -91,7 +78,7 @@ public class PlayerControl : MonoBehaviour
 
             if (_blockScript != null && _blockScript.IsBlocking)
             {
-                Vector3 directionToEnemy = (enemyScript.transform.position - transform.position).normalized;
+                Vector3 directionToEnemy = (enemyScript.GetTransform().position - transform.position).normalized;
                 float angle = Vector3.Angle(transform.forward, directionToEnemy);
 
                 if (angle <= blockAngle / 2)
@@ -115,70 +102,51 @@ public class PlayerControl : MonoBehaviour
                 OnBlockSuccess?.Invoke(); 
                 if (blockSparksPrefab != null && blockEffectSpawnPoint != null)
                 {
-                    Vector3 directionToEnemy = (enemyScript.transform.position - transform.position).normalized;
+                    Vector3 directionToEnemy = (enemyScript.GetTransform().position - transform.position).normalized;
                     Quaternion sparkRotation = Quaternion.LookRotation(directionToEnemy);
                     GameObject sparks = Instantiate(blockSparksPrefab, blockEffectSpawnPoint.position, sparkRotation);
                     Destroy(sparks, 1.0f);
                 }
-                enemyScript.canDealDamage = false; 
+                enemyScript.CanDealDamage = false; 
                 return; 
             }
             else
             {
-                // TAKE DAMAGE
-                if (_stats != null)
-                {
-                    _stats.TakeDamage(incomingDamage); 
-                }
+                if (_stats != null) _stats.TakeDamage(incomingDamage); 
 
-                // --- THE FIX ---
-                // Check if we died from that damage. If we are dead, DO NOT FLINCH.
                 if (_stats != null && _stats.IsDead)
                 {
-                    enemyScript.canDealDamage = false;
-                    return; // Stop here so we don't trigger "Hit"
+                    enemyScript.CanDealDamage = false;
+                    return; 
                 }
-                // ----------------
 
-                // FLINCH LOGIC (Only runs if we are still alive)
                 if (_attackScript != null && !_attackScript.IsAttacking())
                 {
                     if (_animator != null) _animator.SetTrigger(HitTrigger);
                 }
 
                 enemyScript.RegisterHit(); 
-                enemyScript.canDealDamage = false;
+                enemyScript.CanDealDamage = false;
             }
         }
     }
 
-    // --- GUARD BREAK COROUTINE ---
-    private IEnumerator GuardBreakSequence(SkeletonAI enemyScript)
+    private IEnumerator GuardBreakSequence(ICombatant enemyScript)
     {
-        // 1. Drop Shield
         if (_blockScript != null) _blockScript.ForceDropShield();
-
-        // 2. PAUSE STAMINA REGEN
-        // We pause it for the stun duration + a little extra (e.g. 0.5s) so you don't recover immediately
         if (_stats != null) _stats.PauseStaminaRegen(guardBreakStunDuration + 0.5f);
 
-        // 3. Lock controls
-        Walk walkScript = GetComponent<Walk>(); // Assuming you have Walk script
+        Walk walkScript = GetComponent<Walk>(); 
         if (walkScript != null) walkScript.IsMovementLocked = true;
         if (_attackScript != null) _attackScript.enabled = false;
         if (_dodgeScript != null) _dodgeScript.enabled = false;
 
-        // 4. Animation
         if (_animator != null) _animator.SetTrigger(GuardBreakTrigger);
 
-        // 5. Disable enemy damage for this specific swing so we don't take HP damage instantly
-        if (enemyScript != null) enemyScript.canDealDamage = false;
+        if (enemyScript != null) enemyScript.CanDealDamage = false;
 
-        // 6. Wait (The Stun)
-        // This is where the player is helpless
         yield return new WaitForSeconds(guardBreakStunDuration);
 
-        // 7. Restore Controls
         if (walkScript != null) walkScript.IsMovementLocked = false;
         if (_attackScript != null) _attackScript.enabled = true;
         if (_dodgeScript != null) _dodgeScript.enabled = true;

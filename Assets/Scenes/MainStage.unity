@@ -2926,7 +2926,7 @@ MonoBehaviour:
   hitRadius: 0.5
   currentState: 0
   _target: {fileID: 0}
-  canDealDamage: 0
+  totalAttacksThisFight: 0
 --- !u!136 &385033933
 CapsuleCollider:
   m_ObjectHideFlags: 0

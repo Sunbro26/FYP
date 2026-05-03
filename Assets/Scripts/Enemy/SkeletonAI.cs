@@ -2,9 +2,8 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
-
-[RequireComponent(typeof(NavMeshAgent), typeof(Animator))]
-public class SkeletonAI : MonoBehaviour 
+using AdaptiveCombatFramework; // --- PHASE 1: Add Framework Namespace ---[RequireComponent(typeof(NavMeshAgent), typeof(Animator))]
+public class SkeletonAI : MonoBehaviour, ICombatant // --- PHASE 1: Sign the Interface Contract ---
 {
     // --- Definitions ---
     public enum AIState { Idle, Strategizing, Maneuvering, Attacking, Retreating, Stunned }
@@ -31,17 +30,13 @@ public class SkeletonAI : MonoBehaviour
         [Header("Timing")]
         public float windUpTime;      
         public float damageDuration;  
-        public float totalDuration;
-        
-        [Header("Logic")]
+        public float totalDuration;[Header("Logic")]
         public float cooldown = 4.0f; 
         [HideInInspector] public float lastTimeUsed = -999f; 
 
         [Header("Quirks")]
         public bool tracksPlayerDuringWindup = true;
-        public bool useFootHitbox = false;
-
-        [Header("Damage Stats")]
+        public bool useFootHitbox = false;[Header("Damage Stats")]
         public int damage = 15;
         public float blockStaminaCost = 20f;
     }
@@ -50,11 +45,9 @@ public class SkeletonAI : MonoBehaviour
     public AIPersona currentPersona;
     public float sensorRadius = 15f;
     public float circleSpeed = 2.5f;
-    private float _attackTimer = 0f;
 
     // --- PROXY AGENT MODIFICATION ---
-    [Header("AI Control")]
-    [Tooltip("If true, the internal heuristic logic is disabled, allowing a Proxy Agent to drive this character.")]
+    [Header("AI Control")][Tooltip("If true, the internal heuristic logic is disabled, allowing a Proxy Agent to drive this character.")]
     public bool useExternalAI = false; 
 
     [Header("Attack Library")]
@@ -87,14 +80,13 @@ public class SkeletonAI : MonoBehaviour
     private EnemyAttack _currentExecutingAttack; 
     
     private float _decisionTimer;
-    private int _skippedAttackWindows = 0;
     private bool _isActionLocked = false;
-    private int _retreatType = 0; 
+    // private int _retreatType = 0; 
     private float _strafeDirection = 1f;
     private float _strafeTimer = 0f;
     
-    public bool canDealDamage = false;
-    [HideInInspector] public int totalAttacksThisFight = 0; //new
+    // --- PHASE 1: Changed to Property to match ICombatant ---
+    public bool CanDealDamage { get; set; } = false;
     private Vector2 _smoothInputVector; 
 
     // --- Hashes ---
@@ -104,6 +96,10 @@ public class SkeletonAI : MonoBehaviour
     private static readonly int TriggerAttack = Animator.StringToHash("TriggerAttack");
     private static readonly int AttackSpeedHash = Animator.StringToHash("AttackSpeed");
     private static readonly int HitTrigger = Animator.StringToHash("Hit");
+
+    private float _attackTimer = 0f;
+    [HideInInspector] public int totalAttacksThisFight = 0;
+    private int _skippedAttackWindows = 0;
 
     void Start()
     {
@@ -131,7 +127,6 @@ public class SkeletonAI : MonoBehaviour
 
     void Update()
     {
-        // If I am dead, do absolutely nothing.
         if (_myStats != null && _myStats.IsDead) return;
 
         UpdateDebugVisuals(); 
@@ -147,7 +142,6 @@ public class SkeletonAI : MonoBehaviour
         if (currentState == AIState.Strategizing)
         {
             _decisionTimer += Time.deltaTime;
-            
             RunHeuristicDecisionLogic();
         }
         else
@@ -215,7 +209,6 @@ public class SkeletonAI : MonoBehaviour
 
         foreach (var attack in availableAttacks)
         {
-            // Cooldown Filter
             if (Time.time < attack.lastTimeUsed + attack.cooldown) continue;
 
             float score = CalculateAttackScore(attack, currentDist);
@@ -243,7 +236,6 @@ public class SkeletonAI : MonoBehaviour
         return null;
     }
 
-
     float CalculateAttackScore(EnemyAttack attack, float dist)
     {
         float score = 10f; 
@@ -254,7 +246,7 @@ public class SkeletonAI : MonoBehaviour
             score += 40f; 
             if (distDiff <= attack.rangeTolerance) score += 20f;
         }
-         if (dist < 2.0f)
+        if (dist < 2.0f)
         {
             score -= currentPersona.fear * 50f; 
         }
@@ -344,7 +336,6 @@ public class SkeletonAI : MonoBehaviour
         }
     }
 
-    // --- ATTACK EXECUTION (Merged from MultipleAttacks Branch) ---
     IEnumerator ExecuteAttackRoutine()
     {
         _isActionLocked = true;
@@ -356,34 +347,31 @@ public class SkeletonAI : MonoBehaviour
         _attackTimer = 0f;
 
         OnEnemyAttackAttempt?.Invoke(_currentExecutingAttack.name);
-        totalAttacksThisFight++; //new
+        totalAttacksThisFight++;
 
         _animator.SetInteger(AttackIndex, _currentExecutingAttack.animationIndex);
         _animator.SetTrigger(TriggerAttack);
 
         if (_currentExecutingAttack.name == "Combo Attack")
         {
-            float windup1 = 0.7f;
-            float duration1 = 0.85f;
-            float windup2 = 0.1f;
-            float duration2 = 0.85f;
-            float windup3 = 0.1f;
-            float duration3 = 0.85f;
+            float windup1 = 0.7f; float duration1 = 0.85f;
+            float windup2 = 0.1f; float duration2 = 0.85f;
+            float windup3 = 0.1f; float duration3 = 0.85f;
 
             yield return StartCoroutine(WaitWithAttackTimer(windup1, true));
-            canDealDamage = true;
+            CanDealDamage = true;
             yield return StartCoroutine(WaitWithAttackTimer(duration1));
-            canDealDamage = false;
+            CanDealDamage = false;
 
             yield return StartCoroutine(WaitWithAttackTimer(windup2));
-            canDealDamage = true;
+            CanDealDamage = true;
             yield return StartCoroutine(WaitWithAttackTimer(duration2));
-            canDealDamage = false;
+            CanDealDamage = false;
 
             yield return StartCoroutine(WaitWithAttackTimer(windup3));
-            canDealDamage = true;
+            CanDealDamage = true;
             yield return StartCoroutine(WaitWithAttackTimer(duration3));
-            canDealDamage = false;
+            CanDealDamage = false;
 
             float timeSpent = windup1 + duration1 + windup2 + duration2 + windup3 + duration3;
             float remaining = _currentExecutingAttack.totalDuration - timeSpent;
@@ -399,9 +387,9 @@ public class SkeletonAI : MonoBehaviour
             float currentTotalDuration = _currentExecutingAttack.totalDuration;
 
             yield return StartCoroutine(WaitWithAttackTimer(currentWindUp, _currentExecutingAttack.tracksPlayerDuringWindup));
-            canDealDamage = true;
+            CanDealDamage = true;
             yield return StartCoroutine(WaitWithAttackTimer(currentDamageWindow));
-            canDealDamage = false;
+            CanDealDamage = false;
 
             float remaining = currentTotalDuration - currentWindUp - currentDamageWindow;
             if (remaining > 0f)
@@ -445,7 +433,7 @@ public class SkeletonAI : MonoBehaviour
         StopAllCoroutines();
         _isActionLocked = true;
         _agent.isStopped = true;
-        canDealDamage = false;
+        CanDealDamage = false;
         _attackTimer = 0f;
         _currentExecutingAttack = null;
         _plannedAttack = null; 
@@ -457,7 +445,7 @@ public class SkeletonAI : MonoBehaviour
     private IEnumerator ParryReboundRoutine()
     {
         _animator.ResetTrigger(TriggerAttack);
-        _animator.SetFloat(AttackSpeedHash, -1.5f); // Fast rebound
+        _animator.SetFloat(AttackSpeedHash, -1.5f); 
         yield return new WaitForSeconds(0.3f);
         _animator.SetFloat(AttackSpeedHash, 1f); 
         _animator.CrossFade("Stun", 0.15f);
@@ -467,20 +455,17 @@ public class SkeletonAI : MonoBehaviour
         SwitchState(AIState.Retreating);
     }
 
-    // --- FLINCH LOGIC (From MultipleAttacks Branch) ---
+    // --- FLINCH LOGIC ---
     public void TakeHit()
     {
-        // --- THE FIX ---
-        // If dead, ignore the hit completely.
         if (_myStats != null && _myStats.IsDead) return;
-        // ---------------
 
         if (_isActionLocked) return;
 
         StopAllCoroutines();
         _agent.isStopped = true;
         _isActionLocked = true;
-        canDealDamage = false;
+        CanDealDamage = false;
         _attackTimer = 0f;
         _currentExecutingAttack = null;
         _plannedAttack = null; 
@@ -488,7 +473,6 @@ public class SkeletonAI : MonoBehaviour
         _animator.SetTrigger(HitTrigger);
         StartCoroutine(RecoverFromHit());
     }
-
 
     public void RegisterHit() { if (_currentExecutingAttack != null) OnEnemyAttackSuccess?.Invoke(_currentExecutingAttack.name); }
     
@@ -528,8 +512,14 @@ public class SkeletonAI : MonoBehaviour
         }
     }
 
-    // --- HELPERS ---
+    // --- PHASE 1: ICombatant Interface Implementation ---
+    public Transform GetTransform() => transform;
+    public int GetIncomingDamage() => _currentExecutingAttack != null ? _currentExecutingAttack.damage : 10;
+    public float GetIncomingStaminaCost() => _currentExecutingAttack != null ? _currentExecutingAttack.blockStaminaCost : 10f;
+    public bool IsIncomingAttackParriable() => _currentExecutingAttack != null ? _currentExecutingAttack.isParriable : true;
     public EnemyAttack GetCurrentAttack() => _currentExecutingAttack;
+
+    // --- HELPERS ---
     public float GetCurrentStrafe() => _animator.GetFloat(MoveX);
     public float GetCurrentForward() => _animator.GetFloat(MoveZ);
     public bool IsAttacking() => currentState == AIState.Attacking;
@@ -553,10 +543,9 @@ public class SkeletonAI : MonoBehaviour
 
         Vector3 finalMove = tangent * _strafeDirection * circleSpeed * Time.deltaTime;
 
-        float fearGap = currentPersona.fear * 3.0f; // Adds up to 3 meters of extra space
+        float fearGap = currentPersona.fear * 3.0f;
         float targetDist = currentPersona.preferredCombatRange + fearGap;
 
-        // If aggressive, still drift closer as we did before
         if (currentPersona.aggression > 0.7f) targetDist -= 0.5f;
 
         float dist = Vector3.Distance(transform.position, _target.position);
@@ -569,7 +558,6 @@ public class SkeletonAI : MonoBehaviour
 
     void UpdateAnim(float targetX, float targetZ) 
     { 
-        // Get the current values from the animator
         float currentX = _animator.GetFloat(MoveX);
         float currentZ = _animator.GetFloat(MoveZ);
 
@@ -590,16 +578,16 @@ public class SkeletonAI : MonoBehaviour
         return Mathf.Abs(d - _plannedAttack.optimalRange) <= _plannedAttack.rangeTolerance; 
     }
     
-    void UpdateDebugVisuals() { if (_swordMaterialInstance) _swordMaterialInstance.SetColor(_colorPropertyName, canDealDamage ? Color.red : _originalSwordColor); }
+    void UpdateDebugVisuals() { if (_swordMaterialInstance) _swordMaterialInstance.SetColor(_colorPropertyName, CanDealDamage ? Color.red : _originalSwordColor); }
     
     void OnDrawGizmos() { /* Gizmo logic can go here if needed */ }
 
-    // --- RESET LOGIC (Called by CharacterStats) ---
+    // --- RESET LOGIC ---
     public void ResetAI()
     {
         StopAllCoroutines();
         _isActionLocked = false;
-        canDealDamage = false;
+        CanDealDamage = false;
         totalAttacksThisFight = 0;
         _currentExecutingAttack = null;
         _plannedAttack = null;

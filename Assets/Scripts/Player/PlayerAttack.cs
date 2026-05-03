@@ -1,7 +1,8 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 using System.Collections;
-using System;
+using System; 
+using AdaptiveCombatFramework; // --- NEW: Tells the script to use the framework ---
 
 public class PlayerAttack : MonoBehaviour
 {
@@ -13,14 +14,12 @@ public class PlayerAttack : MonoBehaviour
     [SerializeField] float staminaCost = 20f;
     [SerializeField] int damageAmount = 15;
 
-    [Header("Hitbox Settings")]
-    [Tooltip("Assign an empty GameObject placed at the tip of your sword/weapon.")]
+    [Header("Hitbox Settings")][Tooltip("Assign an empty GameObject placed at the tip of your sword/weapon.")]
     public Transform attackPoint;
     public float attackRange = 1.5f;
     public LayerMask enemyLayers;
 
-    [Header("Timing")]
-    [Tooltip("Time into the animation when the hit actually registers.")]
+    [Header("Timing")][Tooltip("Time into the animation when the hit actually registers.")]
     public float hitRegistrationDelay = 0.3f;
 
     private Animator _animator;
@@ -64,7 +63,7 @@ public class PlayerAttack : MonoBehaviour
         if (_isAttacking) return false;
         if (_dodgeScript != null && _dodgeScript.IsDodging()) return false;
         if (_blockScript != null && _blockScript.IsBlocking) return false;
-        return _stats != null && _stats.CanSpendStamina(staminaCost);
+        return _stats != null && _stats.UseStamina(0); // Quick check if stamina > 0 without spending
     }
 
     private IEnumerator AttackSequence()
@@ -103,7 +102,8 @@ public class PlayerAttack : MonoBehaviour
                 if (parentStats != null) parentStats.TakeDamage(damageAmount);
             }
 
-            SkeletonAI bossAI = enemy.GetComponentInParent<SkeletonAI>();
+            // --- DECOUPLING FIX: Look for the Interface, not the Skeleton ---
+            ICombatant bossAI = enemy.GetComponentInParent<ICombatant>();
             if (bossAI != null)
             {
                 bossAI.TakeHit();
