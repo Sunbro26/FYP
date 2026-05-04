@@ -218,18 +218,29 @@ public class MultiGAILManager : MonoBehaviour
             float totalStyleReward = 0f;
             int criticCount = Mathf.Min(_critics.Count, weights.Count);
             for (int i = 0; i < criticCount; i++)
-            {
-                float alpha = weights[i];
-                if (alpha <= 0f)
                 {
-                    continue;
+                    float alpha = weights[i];
+                    if (alpha <= 0f) continue;
+
+                    _critics[i].Schedule(inputTensor);
+                    
+                    // --- THE FIX IS HERE ---
+                    var outputTensor = _critics[i].PeekOutput() as Tensor<float>;
+                    float discriminatorOutput = 0f;
+
+                    if (outputTensor != null)
+                    {
+                        // We must 'ReadbackAndClone' to move the data from GPU to CPU
+                        // so we can actually read the [0] value.
+                        using (var cpuTensor = outputTensor.ReadbackAndClone())
+                        {
+                            discriminatorOutput = cpuTensor[0];
+                        }
+                    }
+
+                    totalStyleReward += alpha * EvaluateStyleMatch(discriminatorOutput);
                 }
 
-                _critics[i].Schedule(inputTensor);
-                var outputTensor = _critics[i].PeekOutput() as Tensor<float>;
-                float discriminatorOutput = outputTensor != null ? outputTensor[0] : 0f;
-                totalStyleReward += alpha * EvaluateStyleMatch(discriminatorOutput);
-            }
 
             return totalStyleReward;
         }

@@ -2,39 +2,39 @@
     "name": "root",
     "metadata": {
         "timer_format_version": "0.1.0",
-        "start_time_seconds": "1777666058",
-        "python_version": "3.10.12 (main, Dec  7 2025, 14:29:16) [MSC v.1944 64 bit (AMD64)]",
-        "command_line_arguments": "D:\\Uni\\FYP\\FYP\\.venv\\Scripts\\mlagents-learn config\\skeleton_multigail.yaml --run-id=SkeletonMultiGAIL_v1 --resume",
+        "start_time_seconds": "1777811290",
+        "python_version": "3.10.12 | packaged by Anaconda, Inc. | (main, Jul  5 2023, 19:01:18) [MSC v.1916 64 bit (AMD64)]",
+        "command_line_arguments": "C:\\Users\\Abdul\\miniconda3\\envs\\mlagents\\Scripts\\mlagents-learn results\\SkeletonMultiGAIL_v1\\configuration.yaml --resume",
         "mlagents_version": "1.1.0",
         "mlagents_envs_version": "1.1.0",
         "communication_protocol_version": "1.5.0",
-        "pytorch_version": "2.1.1+cpu",
+        "pytorch_version": "2.2.1+cu121",
         "numpy_version": "1.23.5",
-        "end_time_seconds": "1777666131"
+        "end_time_seconds": "1777811358"
     },
-    "total": 72.32289149999997,
+    "total": 68.5486562999431,
     "count": 1,
-    "self": 0.06691270000010263,
+    "self": 0.036040900042280555,
     "children": {
         "run_training.setup": {
-            "total": 0.18314140000438783,
+            "total": 0.11354329995810986,
             "count": 1,
-            "self": 0.18314140000438783
+            "self": 0.11354329995810986
         },
         "TrainerController.start_learning": {
-            "total": 72.07283739999548,
+            "total": 68.39907209994271,
             "count": 1,
-            "self": 0.003569999993487727,
+            "self": 0.00010289996862411499,
             "children": {
                 "TrainerController._reset_env": {
-                    "total": 72.06545530000585,
+                    "total": 68.39895159984007,
                     "count": 1,
-                    "self": 72.06545530000585
+                    "self": 68.39895159984007
                 },
                 "TrainerController._save_models": {
-                    "total": 0.0038120999961392954,
+                    "total": 1.7600134015083313e-05,
                     "count": 1,
-                    "self": 0.0038120999961392954
+                    "self": 1.7600134015083313e-05
                 }
             }
         }

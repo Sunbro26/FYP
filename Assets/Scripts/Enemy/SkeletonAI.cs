@@ -138,7 +138,16 @@ public class SkeletonAI : MonoBehaviour
         if (_target == null) return;
 
         // --- PROXY CHECK ---
-        if (useExternalAI) return; 
+        if (useExternalAI) 
+        {
+            // FIX: Let the Proxy Agent lock-on smoothly per frame.
+            // Only track if we aren't locked in an action (the attack coroutine handles its own tracking).
+            if (!_isActionLocked && currentState != AIState.Stunned)
+            {
+                FaceTarget();
+            }
+            return; 
+        } 
 
         if (_isActionLocked) return;
 

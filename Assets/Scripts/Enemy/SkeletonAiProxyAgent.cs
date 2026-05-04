@@ -95,6 +95,7 @@ public class SkeletonAiProxyAgent : Agent
     private float _estimatedAggressiveWeight = 1f;
     private GUIStyle _debugOverlayStyle;
     private GUIStyle _debugOverlayBoxStyle;
+    private bool _pendingEpisodeEnd = false;
 
     public override void Initialize()
     {
@@ -116,14 +117,21 @@ public class SkeletonAiProxyAgent : Agent
         ApplyTrainingResetOverride();
     }
 
-    void OnEnable()
+    protected override void OnEnable()
     {
+        // THIS LINE IS CRITICAL. IT REGISTERS THE AGENT WITH THE ACADEMY.
+        base.OnEnable(); 
+        
         ApplyTrainingResetOverride();
         SubscribeDebugInput();
     }
 
-    void OnDisable()
+
+    protected override void OnDisable()
     {
+        // THIS LINE IS CRITICAL TO PREVENT MEMORY LEAKS.
+        base.OnDisable(); 
+        
         UnsubscribeDebugInput();
         ReleaseTrainingResetOverride();
         UnsubscribeCombatEvents();
@@ -138,6 +146,14 @@ public class SkeletonAiProxyAgent : Agent
 
     void Update()
     {
+        // --- NEW: Safely end the episode at the start of a fresh frame ---
+        if (_pendingEpisodeEnd)
+        {
+            _pendingEpisodeEnd = false;
+            EndEpisode();
+            return;
+        }
+
         UpdateRuntimeStyleShift();
         UpdateOpponentModelStyleShift();
 
@@ -879,7 +895,7 @@ public class SkeletonAiProxyAgent : Agent
         if (_episodeResolved) return;
         _episodeResolved = true;
         AddReward(winReward);
-        EndEpisode();
+        _pendingEpisodeEnd = true; // <-- FIX: Do not call EndEpisode() here
     }
 
     void HandleSelfDeath()
@@ -887,7 +903,7 @@ public class SkeletonAiProxyAgent : Agent
         if (_episodeResolved) return;
         _episodeResolved = true;
         AddReward(lossPenalty);
-        EndEpisode();
+        _pendingEpisodeEnd = true; // <-- FIX: Do not call EndEpisode() here
     }
 
     void ApplyShapingReward(float strafeAction, float forwardAction, int discreteAction)
@@ -940,7 +956,9 @@ public class SkeletonAiProxyAgent : Agent
         SubscribeDebugInput();
         EnsureStyleWeightsInitialized();
         SampleStyleWeightsForEpisode();
+        
         _episodeResolved = false;
+        _pendingEpisodeEnd = false; // <-- NEW: Reset our safety flag
         _opponentModelTimer = 0f;
         Time.timeScale = 1.0f;
 
@@ -1109,18 +1127,18 @@ public class SkeletonAiProxyAgent : Agent
             return;
         }
 
-        if (playerTransform != null)
-        {
-            Vector3 dir = (playerTransform.position - transform.position).normalized;
-            dir.y = 0f;
-            if (dir != Vector3.zero)
-            {
-                transform.rotation = Quaternion.Slerp(
-                    transform.rotation,
-                    Quaternion.LookRotation(dir),
-                    Time.deltaTime * 10f);
-            }
-        }
+        // if (playerTransform != null)
+        // {
+        //     Vector3 dir = (playerTransform.position - transform.position).normalized;
+        //     dir.y = 0f;
+        //     if (dir != Vector3.zero)
+        //     {
+        //         transform.rotation = Quaternion.Slerp(
+        //             transform.rotation,
+        //             Quaternion.LookRotation(dir),
+        //             Time.deltaTime * 10f);
+        //     }
+        // }
 
         float strafe = actions.ContinuousActions[0];
         float forward = actions.ContinuousActions[1];

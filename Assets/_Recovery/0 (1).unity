@@ -2254,9 +2254,9 @@ MonoBehaviour:
     VectorActionDescriptions: []
     VectorActionSpaceType: 0
     hasUpgradedBrainParametersWithActionSpec: 1
-  m_Model: {fileID: 5022602860645237092, guid: 86636612168796644865fb23ee4d809f, type: 3}
+  m_Model: {fileID: 0}
   m_InferenceDevice: 0
-  m_BehaviorType: 1
+  m_BehaviorType: 0
   m_BehaviorName: PlayerProxy
   TeamId: 0
   m_UseChildSensors: 1
@@ -2301,7 +2301,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f2902496c0120472b90269f94a0aec7e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.ML-Agents::Unity.MLAgents.Demonstrations.DemonstrationRecorder
-  Record: 0
+  Record: 1
   NumStepsToRecord: 0
   DemonstrationName: PlayerAggressive
   DemonstrationDirectory: ./config
@@ -2797,7 +2797,7 @@ MonoBehaviour:
     preferredCombatRange: 1.25
   sensorRadius: 35
   circleSpeed: 1.15
-  useExternalAI: 1
+  useExternalAI: 0
   availableAttacks:
   - name: Basic Slash
     animationIndex: 0
@@ -2895,8 +2895,8 @@ MonoBehaviour:
     rangeTolerance: 1
     weight: 1.99
     isParriable: 0
-    windUpTime: 1.6
-    damageDuration: 0.6
+    windUpTime: 1.5
+    damageDuration: 0.85
     totalDuration: 3.6
     cooldown: 4
     lastTimeUsed: -999
@@ -2922,7 +2922,7 @@ MonoBehaviour:
   swordMesh: {fileID: 1909943965}
   swordBone: {fileID: 1505110766}
   footBone: {fileID: 1562482256}
-  showDebugGizmos: 1
+  showDebugGizmos: 0
   hitRadius: 0.5
   currentState: 0
   _target: {fileID: 312797410}
@@ -3053,7 +3053,7 @@ MonoBehaviour:
   damageTakenPenaltyScale: 1
   winReward: 1.5
   lossPenalty: -1.5
-  styleRewardScale: 0.15
+  styleRewardScale: 0.05
 --- !u!114 &385033940
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3076,9 +3076,9 @@ MonoBehaviour:
     VectorActionDescriptions: []
     VectorActionSpaceType: 0
     hasUpgradedBrainParametersWithActionSpec: 1
-  m_Model: {fileID: 5022602860645237092, guid: 15eb765b448257041bd2de080acc784e, type: 3}
+  m_Model: {fileID: 0}
   m_InferenceDevice: 0
-  m_BehaviorType: 2
+  m_BehaviorType: 0
   m_BehaviorName: SkeletonAI
   TeamId: 0
   m_UseChildSensors: 1
@@ -3113,7 +3113,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f2902496c0120472b90269f94a0aec7e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.ML-Agents::Unity.MLAgents.Demonstrations.DemonstrationRecorder
-  Record: 0
+  Record: 1
   NumStepsToRecord: 0
   DemonstrationName: SkeletonDefensive
   DemonstrationDirectory: ./config
@@ -11795,7 +11795,6 @@ GameObject:
   m_Component:
   - component: {fileID: 1722857666}
   - component: {fileID: 1722857665}
-  - component: {fileID: 1722857667}
   m_Layer: 0
   m_Name: GameManager
   m_TagString: Untagged
@@ -11833,42 +11832,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1722857667
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1722857664}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 7e8022145a2e21d4e820c6c1989d1a98, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::AdaptiveCombatFramework.ControlsOverlay
-  panelWidth: 220
-  panelHeight: 200
-  margin: 20
-  fontSize: 15
-  controlsText: '<b>PLAYER CONTROLS</b>
-
-
-    <b>W A S D</b> - Move
-
-    <b>Mouse</b>
-    - Look Around
-
-
-    <b>Left Click</b> - Attack
-
-    <b>Right Click</b> - Hold
-    to Block
-
-    <b>Q</b> - Parry
-
-    <b>Space</b> - Dodge Roll
-
-    <b>F</b> -
-    Lock On'
 --- !u!1001 &1750688688
 PrefabInstance:
   m_ObjectHideFlags: 0

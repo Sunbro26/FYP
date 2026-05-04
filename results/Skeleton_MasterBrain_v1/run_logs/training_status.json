@@ -1,0 +1,29 @@
+{
+    "SkeletonAI": {
+        "checkpoints": [
+            {
+                "steps": 250424,
+                "file_path": "results\\Skeleton_MasterBrain_v1\\SkeletonAI\\SkeletonAI-250424.onnx",
+                "reward": 57.43182654040201,
+                "creation_time": 1777880093.4945996,
+                "auxillary_file_paths": [
+                    "results\\Skeleton_MasterBrain_v1\\SkeletonAI\\SkeletonAI-250424.pt"
+                ]
+            }
+        ],
+        "final_checkpoint": {
+            "steps": 250424,
+            "file_path": "results\\Skeleton_MasterBrain_v1\\SkeletonAI.onnx",
+            "reward": 57.43182654040201,
+            "creation_time": 1777880093.4945996,
+            "auxillary_file_paths": [
+                "results\\Skeleton_MasterBrain_v1\\SkeletonAI\\SkeletonAI-250424.pt"
+            ]
+        }
+    },
+    "metadata": {
+        "stats_format_version": "0.3.0",
+        "mlagents_version": "1.1.0",
+        "torch_version": "2.2.1+cu121"
+    }
+}

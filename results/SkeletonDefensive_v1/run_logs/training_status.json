@@ -1,0 +1,29 @@
+{
+    "SkeletonAI": {
+        "checkpoints": [
+            {
+                "steps": 200291,
+                "file_path": "results\\SkeletonDefensive_v1\\SkeletonAI\\SkeletonAI-200291.onnx",
+                "reward": 114.19026374816895,
+                "creation_time": 1777834418.6989503,
+                "auxillary_file_paths": [
+                    "results\\SkeletonDefensive_v1\\SkeletonAI\\SkeletonAI-200291.pt"
+                ]
+            }
+        ],
+        "final_checkpoint": {
+            "steps": 200291,
+            "file_path": "results\\SkeletonDefensive_v1\\SkeletonAI.onnx",
+            "reward": 114.19026374816895,
+            "creation_time": 1777834418.6989503,
+            "auxillary_file_paths": [
+                "results\\SkeletonDefensive_v1\\SkeletonAI\\SkeletonAI-200291.pt"
+            ]
+        }
+    },
+    "metadata": {
+        "stats_format_version": "0.3.0",
+        "mlagents_version": "1.1.0",
+        "torch_version": "2.2.1+cu121"
+    }
+}
