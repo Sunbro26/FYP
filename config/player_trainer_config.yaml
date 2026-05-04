@@ -1,5 +1,5 @@
 behaviors:
-  PlayerProxy: 
+  SkeletonAI: 
     trainer_type: ppo
     hyperparameters:
       batch_size: 64        # Smaller batch for faster updates on simpler tasks
