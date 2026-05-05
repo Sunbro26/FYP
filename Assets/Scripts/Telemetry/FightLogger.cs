@@ -1,329 +1,591 @@
 using UnityEngine;
+using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
-using System.Collections.Generic;
+using UnityEngine.Networking;
+using Unity.MLAgents.Policies;
 
-/// <summary>
-/// Logs per-fight data to two CSV files:
-///   fight_log.csv           — one row per fight, all summary metrics
-///   attack_distribution.csv — one row per attack type per fight
-///
-/// Agent type is AUTO-DETECTED from bossAI.useExternalAI — no manual input needed.
-///   useExternalAI = false  -->  logs as "Heuristic"
-///   useExternalAI = true   -->  logs as "Trained"
-///
-/// Only personaLabel needs to be set manually in Inspector.
-///
-/// SETUP IN UNITY:
-///   4. Set personaLabel to "Aggressive" or "Defensive" before each session.
-///   5. Agent type is read automatically from boss — no other changes needed.
-/// </summary>
 public class FightLogger : MonoBehaviour
 {
-    [Header("Scene References")]
+    private const string LogPrefix = "[FightLogger]";
+
+    [Header("Cloud Logging WebGL")]
+    [Tooltip("The Google Apps Script Web App URL to send data to.")]
+    [SerializeField] private string cloudWebhookURL = "YOUR_GOOGLE_SCRIPT_URL_HERE";
+
+    [Tooltip("Toggle to enable/disable sending data to the cloud.")]
+    [SerializeField] private bool enableCloudLogging = true;
+
+    // [Header("CSV File Configuration")]
+    // [SerializeField] private string fightLogFileName = "fight_log.csv";
+    // [SerializeField] private string attackDistFileName = "attack_distribution.csv";
+
+    [Header("Experiment Identity")]
+    [SerializeField] private string personaLabel = "Aggressive";
+
+    [Header("Timed Experiment Logging")]
+    [Tooltip("Usually false now. SurveyUI should start/stop logging phases.")]
+    [SerializeField] private bool autoStartLoggingOnStart = false;
+
+    [Tooltip("If true, each death/victory inside the 3-minute phase is logged as one fight.")]
+    [SerializeField] private bool logDeathsDuringTimedSegment = true;
+
+    [Tooltip("After a death/victory, start logging the next fight after the GameManager reset.")]
+    [SerializeField] private bool autoRestartLoggingAfterDeath = true;
+
+    [SerializeField] private float restartLoggingDelayAfterDeath = 4f;
+
+    [Header("Required Framework References")]
     [SerializeField] private Telemetry telemetry;
     [SerializeField] private SkeletonAI bossAI;
     [SerializeField] private CharacterStats playerStats;
     [SerializeField] private CharacterStats bossStats;
-    [SerializeField] private SurveyUI surveyUI;
 
-    [Header("Persona Label — only thing to change manually")]
-    [Tooltip("Type exactly: Aggressive   or   Defensive")]
-    [SerializeField] private string personaLabel = "Aggressive";
+    private string _agentType = "Unknown";
+    private string _forcedSegmentAgentType = null;
 
-    [Header("Timing")]
-    [Tooltip("Seconds after fight ends before survey appears. You Died shows during this window.")]
-    [SerializeField] private float surveyDelay = 6f;
-
-    // Internal fight state 
-    private string _agentType = "Heuristic"; // auto-detected
     private float _fightStartTime;
     private float _playerSurvivalTime;
-    private bool _sessionActive = false;
-    private bool _playerDiedThisFight = false;
-    private bool _fightEndTriggered = false;
-    private int _sessionNumber = 0;
 
-    //  Sampling for fight-wide averages 
-    private float _distanceSampleSum = 0f;
-    private int _distanceSampleCount = 0;
-    private int _bossRetreatCount = 0;
+    private bool _segmentLoggingEnabled;
+    private bool _sessionActive;
+    private bool _playerDiedThisFight;
+    private bool _fightEndTriggered;
+
+    private int _sessionNumber;
+
+    private float _distanceSampleSum;
+    private int _distanceSampleCount;
+    private int _bossRetreatCount;
     private SkeletonAI.AIState _lastBossState = SkeletonAI.AIState.Idle;
 
-    //  CSV paths 
-    private string _fightCsvPath;
-    private string _attackCsvPath;
+    //private string _fightCsvPath;
+    //private string _attackCsvPath;
+
+    private Coroutine _restartRoutine;
 
     private const string FIGHT_CSV_HEADER =
         "session,agent_type,persona,aggression,fear," +
         "fight_duration,player_survived,player_survival_time," +
-        "player_hp_pct,boss_hp_pct," +
-        "avg_distance," +
+        "player_hp_pct,boss_hp_pct,avg_distance," +
         "boss_attack_count,boss_atk_per_sec," +
         "boss_retreat_count,boss_retreat_per_sec," +
-        "player_attacks,player_dodges," +
-        "player_parries,player_blocks," +
-        "damage_dealt,damage_received";
+        "player_attacks,player_dodges,player_parries,player_blocks," +
+        "damage_dealt,damage_received,end_reason";
 
     private const string ATTACK_CSV_HEADER =
         "session,agent_type,persona,attack_name,count,proportion";
 
-    void Awake()
+    private void Awake()
     {
-        _fightCsvPath = Path.Combine(Application.persistentDataPath, "fight_log.csv");
-        _attackCsvPath = Path.Combine(Application.persistentDataPath, "attack_distribution.csv");
+        // _fightCsvPath = Path.Combine(Application.persistentDataPath, fightLogFileName);
+        // _attackCsvPath = Path.Combine(Application.persistentDataPath, attackDistFileName);
 
-        if (!File.Exists(_fightCsvPath))
-        {
-            File.WriteAllText(_fightCsvPath, FIGHT_CSV_HEADER + "\n", Encoding.UTF8);
-            _sessionNumber = 0;
-        }
-        else
-        {
-            string[] lines = File.ReadAllLines(_fightCsvPath);
-            _sessionNumber = Mathf.Max(0, lines.Length - 1);
-        }
+    //    EnsureCsvFilesExist();
 
-        if (!File.Exists(_attackCsvPath))
-            File.WriteAllText(_attackCsvPath, ATTACK_CSV_HEADER + "\n", Encoding.UTF8);
-
-        Debug.Log($"[FightLogger] Starting from fight #{_sessionNumber + 1}");
+        Debug.Log($"{LogPrefix} Initialized.");
+     //   Debug.Log($"{LogPrefix} Fight CSV: {_fightCsvPath}");
+    //    Debug.Log($"{LogPrefix} Attack CSV: {_attackCsvPath}");
+        Debug.Log($"{LogPrefix} Starting from fight #{_sessionNumber + 1}");
     }
 
-    void Start()
+    private void Start()
     {
-        BeginFight();
+        if (autoStartLoggingOnStart)
+        {
+            Debug.LogWarning($"{LogPrefix} Auto-start is enabled. This is usually disabled for the timed survey experiment.");
+            StartLoggingSegment(DetectCurrentAgentType());
+        }
     }
 
-    void Update()
+    private void Update()
     {
-        if (!_sessionActive || _fightEndTriggered) return;
+        if (!_segmentLoggingEnabled || !_sessionActive || _fightEndTriggered)
+            return;
 
-        // Track player first death moment for survival time
-        if (playerStats != null && playerStats.IsDead && !_playerDiedThisFight)
-        {
-            _playerDiedThisFight = true;
-            _playerSurvivalTime = Time.time - _fightStartTime;
-        }
+        TrackPlayerDeathMoment();
+        SampleTelemetry();
+        TrackBossRetreats();
 
-        // Sample distance every frame for true fight-wide average
-        if (telemetry != null)
-        {
-            _distanceSampleSum += telemetry.PlayerEnemyDistance_Agent;
-            _distanceSampleCount++;
-        }
-
-        // Count each new entry into Retreating state
-        if (bossAI != null)
-        {
-            if (bossAI.currentState == SkeletonAI.AIState.Retreating
-                && _lastBossState != SkeletonAI.AIState.Retreating)
-                _bossRetreatCount++;
-            _lastBossState = bossAI.currentState;
-        }
-
-        // Detect fight end
         bool playerDead = playerStats != null && playerStats.IsDead;
         bool bossDead = bossStats != null && bossStats.IsDead;
 
-        if (playerDead || bossDead)
+        if (logDeathsDuringTimedSegment && (playerDead || bossDead))
         {
-            _fightEndTriggered = true;
-            EndFight();
+            string reason = playerDead ? "PlayerDead" : "BossDead";
+            EndCurrentFightAndLog(reason);
+
+            if (autoRestartLoggingAfterDeath && _segmentLoggingEnabled)
+            {
+                if (_restartRoutine != null)
+                    StopCoroutine(_restartRoutine);
+
+                _restartRoutine = StartCoroutine(RestartLoggingAfterDeath());
+            }
         }
     }
 
-    //  Fight Session 
-
-    private void BeginFight()
+    public void StartLoggingSegment(string agentType)
     {
+        Debug.Log($"{LogPrefix} StartLoggingSegment invoked. AgentType: {agentType}");
 
-        CancelInvoke();
+        _segmentLoggingEnabled = true;
+        _forcedSegmentAgentType = string.IsNullOrWhiteSpace(agentType)
+            ? DetectCurrentAgentType()
+            : agentType;
 
-        // Auto-detect agent type from Behaviour Parameters
-        var behaviourParams = bossAI.GetComponent
-            <Unity.MLAgents.Policies.BehaviorParameters>();
-
-        if (behaviourParams != null &&
-            behaviourParams.BehaviorType ==
-            Unity.MLAgents.Policies.BehaviorType.HeuristicOnly)
+        if (_restartRoutine != null)
         {
-            _agentType = "Heuristic";
+            StopCoroutine(_restartRoutine);
+            _restartRoutine = null;
+        }
+
+        BeginFight();
+    }
+
+    public void StopLoggingSegment(string endReason)
+    {
+        Debug.Log($"{LogPrefix} StopLoggingSegment invoked. Reason: {endReason}");
+
+        if (_restartRoutine != null)
+        {
+            StopCoroutine(_restartRoutine);
+            _restartRoutine = null;
+        }
+
+        if (_sessionActive && !_fightEndTriggered)
+        {
+            EndCurrentFightAndLog(endReason);
         }
         else
         {
-            _agentType = "Trained";
+            Debug.Log($"{LogPrefix} No active fight to close for this segment.");
         }
 
+        _segmentLoggingEnabled = false;
+        _sessionActive = false;
+    }
+
+    private IEnumerator RestartLoggingAfterDeath()
+    {
+        Debug.Log($"{LogPrefix} Waiting {restartLoggingDelayAfterDeath} real seconds before next fight log starts.");
+
+        yield return new WaitForSecondsRealtime(restartLoggingDelayAfterDeath);
+
+        if (_segmentLoggingEnabled)
+        {
+            Debug.Log($"{LogPrefix} Restarting fight logging inside current timed segment.");
+            BeginFight();
+        }
+
+        _restartRoutine = null;
+    }
+
+    private void BeginFight()
+    {
+        if (!_segmentLoggingEnabled)
+        {
+            Debug.LogWarning($"{LogPrefix} BeginFight ignored because segment logging is disabled.");
+            return;
+        }
+
+        _agentType = !string.IsNullOrWhiteSpace(_forcedSegmentAgentType)
+            ? _forcedSegmentAgentType
+            : DetectCurrentAgentType();
+
         _fightStartTime = Time.time;
-        _playerDiedThisFight = false;
         _playerSurvivalTime = 0f;
+
+        _playerDiedThisFight = false;
         _fightEndTriggered = false;
         _sessionActive = true;
+
         _sessionNumber++;
 
-        // Reset sampling counters
         _distanceSampleSum = 0f;
         _distanceSampleCount = 0;
         _bossRetreatCount = 0;
         _lastBossState = SkeletonAI.AIState.Idle;
 
-        // Reset telemetry lifetime counters for clean per-fight data
-        if (telemetry != null) telemetry.ResetLifetimeCounters();
+        if (telemetry != null)
+        {
+            telemetry.ResetLifetimeCounters();
+        }
+        else
+        {
+            Debug.LogWarning($"{LogPrefix} telemetry reference is missing.");
+        }
 
-        Debug.Log($"[FightLogger] Fight {_sessionNumber} started | " +
-                  $"AgentType:{_agentType} | Persona:{personaLabel}");
+        if (bossAI != null)
+        {
+            bossAI.totalAttacksThisFight = 0;
+        }
+
+        Debug.Log($"{LogPrefix} Fight {_sessionNumber} started. AgentType: {_agentType}, Persona: {personaLabel}");
     }
 
-    private void EndFight()
+    private void EndCurrentFightAndLog(string endReason)
     {
+        if (!_sessionActive)
+        {
+            Debug.LogWarning($"{LogPrefix} EndCurrentFightAndLog ignored because no session is active.");
+            return;
+        }
+
+        _fightEndTriggered = true;
         _sessionActive = false;
 
         float fightDuration = Time.time - _fightStartTime;
-        bool playerWon = bossStats != null && bossStats.IsDead
-                              && (playerStats == null || !playerStats.IsDead);
 
-        // If player never died, survival time equals full fight duration
-        if (!_playerDiedThisFight)
+        bool playerDead = playerStats != null && playerStats.IsDead;
+        bool bossDead = bossStats != null && bossStats.IsDead;
+        bool playerWon = bossDead && !playerDead;
+
+        if (playerDead && !_playerDiedThisFight)
+        {
+            _playerDiedThisFight = true;
             _playerSurvivalTime = fightDuration;
+        }
 
-        // Health at fight end
-        float playerHpPct = playerStats != null
-            ? (float)playerStats.currentHealth / playerStats.maxHealth : 0f;
-        float bossHpPct = bossStats != null
-            ? (float)bossStats.currentHealth / bossStats.maxHealth : 0f;
+        if (!_playerDiedThisFight)
+        {
+            _playerSurvivalTime = fightDuration;
+        }
 
-        // Persona values live from boss AI
-        float aggression = bossAI != null ? bossAI.currentPersona.aggression : 0f;
-        float fear = bossAI != null ? bossAI.currentPersona.fear : 0f;
+        float playerHpPct = GetHealthPct(playerStats);
+        float bossHpPct = GetHealthPct(bossStats);
 
-        // Compute fight-wide averages
+        float aggression = bossAI != null && bossAI.currentPersona != null
+            ? bossAI.currentPersona.aggression
+            : 0f;
+
+        float fear = bossAI != null && bossAI.currentPersona != null
+            ? bossAI.currentPersona.fear
+            : 0f;
+
         float avgDistance = _distanceSampleCount > 0
-            ? _distanceSampleSum / _distanceSampleCount : 0f;
+            ? _distanceSampleSum / _distanceSampleCount
+            : 0f;
+
         float bossRetreatFreq = fightDuration > 0f
-            ? (float)_bossRetreatCount / fightDuration : 0f;
+            ? _bossRetreatCount / fightDuration
+            : 0f;
 
-        // Write both CSV rows
-        // Write both CSV rows — wrapped in try-catch inside each method
-        WriteFightRow(fightDuration, playerWon, playerHpPct, bossHpPct,
-                      aggression, fear, avgDistance, bossRetreatFreq);
+        Debug.Log(
+            $"{LogPrefix} Fight {_sessionNumber} ended. " +
+            $"Reason:{endReason}, AgentType:{_agentType}, Duration:{fightDuration:F2}, " +
+            $"PlayerWon:{playerWon}, PlayerHP:{playerHpPct:F2}, BossHP:{bossHpPct:F2}"
+        );
+
+        WriteFightRow(
+            fightDuration,
+            playerWon,
+            playerHpPct,
+            bossHpPct,
+            aggression,
+            fear,
+            avgDistance,
+            bossRetreatFreq,
+            endReason
+        );
+
         WriteAttackDistribution();
-
-        // These ALWAYS execute regardless of whether CSV write succeeded
-        if (surveyUI != null)
-            Invoke(nameof(ShowSurveyDelayed), surveyDelay);
-
-        Invoke(nameof(BeginFight), surveyDelay + 120f);
     }
 
-    private void ShowSurveyDelayed()
+    private void TrackPlayerDeathMoment()
     {
-        if (surveyUI != null)
-            surveyUI.ShowSurvey();
+        if (playerStats != null && playerStats.IsDead && !_playerDiedThisFight)
+        {
+            _playerDiedThisFight = true;
+            _playerSurvivalTime = Time.time - _fightStartTime;
+
+            Debug.Log($"{LogPrefix} Player death detected. Survival time: {_playerSurvivalTime:F2}");
+        }
     }
 
-    /// <summary>
-    /// Called by SurveyUI after player submits responses.
-    /// Cancels the long fallback timer and restarts fight after short delay.
-    /// </summary>
-    public void OnSurveyComplete()
+    private void SampleTelemetry()
     {
-        CancelInvoke(nameof(BeginFight));
-        CancelInvoke(nameof(ShowSurveyDelayed));
-        Invoke(nameof(BeginFight), 3.5f);
+        if (telemetry == null)
+            return;
+
+        _distanceSampleSum += telemetry.PlayerEnemyDistance_Agent;
+        _distanceSampleCount++;
+    }
+
+    private void TrackBossRetreats()
+    {
+        if (bossAI == null)
+            return;
+
+        if (bossAI.currentState == SkeletonAI.AIState.Retreating &&
+            _lastBossState != SkeletonAI.AIState.Retreating)
+        {
+            _bossRetreatCount++;
+        }
+
+        _lastBossState = bossAI.currentState;
+    }
+
+    private string DetectCurrentAgentType()
+    {
+        if (bossAI == null)
+            return "Unknown";
+
+        BehaviorParameters behaviorParameters = bossAI.GetComponent<BehaviorParameters>();
+
+        if (behaviorParameters == null)
+        {
+            return bossAI.useExternalAI ? "InferenceOnly" : "HeuristicOnly";
+        }
+
+        return behaviorParameters.BehaviorType switch
+        {
+            BehaviorType.HeuristicOnly => "HeuristicOnly",
+            BehaviorType.InferenceOnly => "InferenceOnly",
+            BehaviorType.Default => "Default",
+            _ => behaviorParameters.BehaviorType.ToString()
+        };
+    }
+
+    private float GetHealthPct(CharacterStats stats)
+    {
+        if (stats == null || stats.maxHealth <= 0)
+            return 0f;
+
+        return Mathf.Clamp01((float)stats.currentHealth / stats.maxHealth);
     }
 
     private void WriteFightRow(
-        float fightDuration, bool playerWon,
-        float playerHpPct, float bossHpPct,
-        float aggression, float fear,
-        float avgDistance, float bossRetreatFreq)
+        float duration,
+        bool playerWon,
+        float playerHpPct,
+        float bossHpPct,
+        float aggression,
+        float fear,
+        float avgDistance,
+        float bossRetreatFreq,
+        string endReason)
     {
         if (telemetry == null)
         {
-            Debug.LogWarning("[FightLogger] Telemetry null — fight row skipped.");
+            Debug.LogWarning($"{LogPrefix} Fight row skipped because telemetry is missing.");
             return;
         }
 
         int bossAttacks = bossAI != null ? bossAI.totalAttacksThisFight : 0;
-        float bossAtkPerSec = fightDuration > 0f
-            ? (float)bossAttacks / fightDuration : 0f;
+
+        float bossAtkPerSec = duration > 0f
+            ? bossAttacks / duration
+            : 0f;
 
         string row = string.Format(
             "{0},{1},{2},{3:F3},{4:F3}," +
             "{5:F2},{6},{7:F2}," +
-            "{8:F3},{9:F3}," +
-            "{10:F2}," +
+            "{8:F3},{9:F3},{10:F2}," +
             "{11},{12:F3}," +
             "{13},{14:F3}," +
-            "{15},{16}," +
-            "{17},{18}," +
-            "{19:F2},{20:F2}",
-
-            _sessionNumber, _agentType, personaLabel, aggression, fear,
-            fightDuration, playerWon ? 1 : 0, _playerSurvivalTime,
-            playerHpPct, bossHpPct,
+            "{15},{16},{17},{18}," +
+            "{19:F2},{20:F2},{21}",
+            _sessionNumber,
+            EscapeCsv(_agentType),
+            EscapeCsv(personaLabel),
+            aggression,
+            fear,
+            duration,
+            playerWon ? 1 : 0,
+            _playerSurvivalTime,
+            playerHpPct,
+            bossHpPct,
             avgDistance,
-            bossAttacks, bossAtkPerSec,
-            _bossRetreatCount, bossRetreatFreq,
-            telemetry.LifetimeAttacks, telemetry.LifetimeDodges,
-            telemetry.LifetimeParries, telemetry.LifetimeBlocks,
-            telemetry.LifetimeDamageDealt, telemetry.LifetimeDamageReceived
+            bossAttacks,
+            bossAtkPerSec,
+            _bossRetreatCount,
+            bossRetreatFreq,
+            telemetry.LifetimeAttacks,
+            telemetry.LifetimeDodges,
+            telemetry.LifetimeParries,
+            telemetry.LifetimeBlocks,
+            telemetry.LifetimeDamageDealt,
+            telemetry.LifetimeDamageReceived,
+            EscapeCsv(endReason)
         );
 
-        try
-        {
-            File.AppendAllText(_fightCsvPath, row + "\n", Encoding.UTF8);
-        }
-        catch (System.Exception e)
-        {
-            Debug.LogError($"[FightLogger] Could not write fight row — is the CSV open in another program? Error: {e.Message}");
-        }
+        StartCoroutine(PostDataToCloud("FightLog", row));
+
+        // try
+        // {
+        //     File.AppendAllText(_fightCsvPath, row + "\n", Encoding.UTF8);
+        //     Debug.Log($"{LogPrefix} Fight row saved locally.");
+        // }
+        // catch (Exception ex)
+        // {
+        //     Debug.LogWarning($"{LogPrefix} Local fight row save skipped/failed. This is expected in WebGL. Error: {ex.Message}");
+        // }
     }
 
     private void WriteAttackDistribution()
     {
-        if (telemetry == null) return;
-
-        Dictionary<string, int> dist = telemetry.GetEnemyAttackDistribution();
-        if (dist == null || dist.Count == 0)
+        if (telemetry == null)
         {
-            Debug.LogWarning("[FightLogger] Attack distribution empty — skipping distribution log.");
+            Debug.LogWarning($"{LogPrefix} Attack distribution skipped because telemetry is missing.");
             return;
         }
 
-        // Compute total for proportions
-        int total = 0;
-        foreach (var kvp in dist) total += kvp.Value;
-        if (total == 0) return;
+        Dictionary<string, int> distribution = telemetry.GetEnemyAttackDistribution();
 
-        foreach (var kvp in dist)
+        if (distribution == null || distribution.Count == 0)
+        {
+            Debug.Log($"{LogPrefix} Attack distribution empty. Nothing to write.");
+            return;
+        }
+
+        int total = 0;
+        foreach (KeyValuePair<string, int> kvp in distribution)
+            total += kvp.Value;
+
+        if (total <= 0)
+            return;
+
+        foreach (KeyValuePair<string, int> kvp in distribution)
         {
             float proportion = (float)kvp.Value / total;
+
             string row = string.Format(
                 "{0},{1},{2},{3},{4},{5:F4}",
                 _sessionNumber,
-                _agentType,
-                personaLabel,
-                kvp.Key,
+                EscapeCsv(_agentType),
+                EscapeCsv(personaLabel),
+                EscapeCsv(kvp.Key),
                 kvp.Value,
                 proportion
             );
-            try
-            {
-                File.AppendAllText(_attackCsvPath, row + "\n", Encoding.UTF8);
-            }
-            catch (System.Exception e)
-            {
-                Debug.LogError($"[FightLogger] Could not write attack distribution — is the CSV open? Error: {e.Message}");
-            }
+
+            StartCoroutine(PostDataToCloud("AttackLog", row));
+
+            // try
+            // {
+            //     File.AppendAllText(_attackCsvPath, row + "\n", Encoding.UTF8);
+            // }
+            // catch (Exception ex)
+            // {
+            //     Debug.LogWarning($"{LogPrefix} Local attack row save skipped/failed. This is expected in WebGL. Error: {ex.Message}");
+            // }
         }
 
-        Debug.Log($"[FightLogger] Attack distribution logged — " +
-                  $"{dist.Count} attack types, total:{total}");
+        Debug.Log($"{LogPrefix} Attack distribution logged. AttackTypes:{distribution.Count}, Total:{total}");
     }
 
-    //  Public getters used by SurveyUI 
+    private IEnumerator PostDataToCloud(string logType, string dataRow)
+{
+    if (!enableCloudLogging)
+    {
+        Debug.LogWarning($"{LogPrefix} Cloud logging disabled. Skipping {logType}.");
+        yield break;
+    }
+
+    if (string.IsNullOrWhiteSpace(cloudWebhookURL) ||
+        cloudWebhookURL == "YOUR_GOOGLE_SCRIPT_URL_HERE")
+    {
+        Debug.LogWarning($"{LogPrefix} Cloud webhook URL is not configured. Skipping {logType}.");
+        yield break;
+    }
+
+    WWWForm form = new WWWForm();
+    form.AddField("logType", logType);
+    form.AddField("dataRow", dataRow);
+
+    using UnityWebRequest request = UnityWebRequest.Post(cloudWebhookURL, form);
+    request.downloadHandler = new DownloadHandlerBuffer();
+
+    Debug.Log($"{LogPrefix} Uploading {logType}...");
+    Debug.Log($"{LogPrefix} {logType} row: {dataRow}");
+
+    yield return request.SendWebRequest();
+
+    string responseText = request.downloadHandler != null
+        ? request.downloadHandler.text
+        : "";
+
+    Debug.Log($"{LogPrefix} {logType} HTTP Code: {request.responseCode}");
+    Debug.Log($"{LogPrefix} {logType} Cloud Response: {responseText}");
+
+    if (request.result != UnityWebRequest.Result.Success)
+    {
+        Debug.LogError($"{LogPrefix} {logType} cloud upload failed. Error: {request.error}");
+        yield break;
+    }
+
+    if (!responseText.StartsWith("OK"))
+    {
+        Debug.LogError($"{LogPrefix} {logType} reached Apps Script but was not confirmed. Response: {responseText}");
+        yield break;
+    }
+
+    Debug.Log($"{LogPrefix} {logType} cloud upload confirmed.");
+}
+
+    // private void EnsureCsvFilesExist()
+    // {
+    //     try
+    //     {
+    //         if (!File.Exists(_fightCsvPath))
+    //         {
+    //             File.WriteAllText(_fightCsvPath, FIGHT_CSV_HEADER + "\n", Encoding.UTF8);
+    //             _sessionNumber = 0;
+    //             Debug.Log($"{LogPrefix} Fight CSV created.");
+    //         }
+    //         else
+    //         {
+    //             string[] lines = File.ReadAllLines(_fightCsvPath);
+    //             _sessionNumber = Mathf.Max(0, lines.Length - 1);
+
+    //             if (lines.Length > 0 && !lines[0].Contains("end_reason"))
+    //             {
+    //                 Debug.LogWarning(
+    //                     $"{LogPrefix} Existing fight_log.csv uses the old header. " +
+    //                     "Delete the old CSV or add the end_reason column manually."
+    //                 );
+    //             }
+    //         }
+
+    //         if (!File.Exists(_attackCsvPath))
+    //         {
+    //             File.WriteAllText(_attackCsvPath, ATTACK_CSV_HEADER + "\n", Encoding.UTF8);
+    //             Debug.Log($"{LogPrefix} Attack distribution CSV created.");
+    //         }
+    //     }
+    //     catch (Exception ex)
+    //     {
+    //         Debug.LogWarning($"{LogPrefix} Local file setup skipped/failed. This is expected in WebGL. Error: {ex.Message}");
+    //     }
+    // }
+
+    private string EscapeCsv(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return string.Empty;
+
+        bool mustQuote =
+            value.Contains(",") ||
+            value.Contains("\"") ||
+            value.Contains("\n") ||
+            value.Contains("\r");
+
+        if (!mustQuote)
+            return value;
+
+        return $"\"{value.Replace("\"", "\"\"")}\"";
+    }
+
     public string GetPersonaLabel() => personaLabel;
-    public string GetAgentType() => _agentType;
+
+    public string GetAgentType()
+    {
+        if (!string.IsNullOrWhiteSpace(_forcedSegmentAgentType))
+            return _forcedSegmentAgentType;
+
+        return _agentType;
+    }
 }

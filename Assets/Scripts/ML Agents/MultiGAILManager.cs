@@ -8,6 +8,8 @@ using Unity.InferenceEngine;
 /// </summary>
 public class MultiGAILManager : MonoBehaviour
 {
+    [SerializeField] private bool disableInWebGL = true;
+    
     [Header("MultiGAIL Critic Models")]
     [Tooltip("One ONNX critic per style/persona.")]
     public List<ModelAsset> criticModelAssets = new List<ModelAsset>();
@@ -36,8 +38,17 @@ public class MultiGAILManager : MonoBehaviour
 
     void Start()
     {
-        InitializeCritics();
-    }
+    #if UNITY_WEBGL && !UNITY_EDITOR
+        if (disableInWebGL)
+        {
+            Debug.LogWarning("[MultiGAILManager] Disabled in WebGL to avoid unsupported inference kernels.");
+            enabled = false;
+            return;
+        }
+    #endif
+
+    InitializeCritics();
+}
 
     void InitializeCritics()
     {
